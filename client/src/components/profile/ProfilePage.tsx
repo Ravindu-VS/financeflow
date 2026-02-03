@@ -67,7 +67,7 @@ export default function ProfilePage() {
       const reader = new FileReader()
       reader.onloadend = () => {
         const base64 = reader.result as string
-        updateUser({ profile: { ...user?.profile, photoURL: base64 } })
+        updateUser({ profile: { firstName: user?.profile?.firstName || '', ...user?.profile, avatar: base64 } })
         toast.success('Profile picture updated!')
         setUploadingPhoto(false)
       }
@@ -83,7 +83,7 @@ export default function ProfilePage() {
   }
 
   const handleRemovePhoto = () => {
-    updateUser({ profile: { ...user?.profile, photoURL: undefined } })
+    updateUser({ profile: { firstName: user?.profile?.firstName || '', ...user?.profile, avatar: undefined } })
     toast.success('Profile picture removed')
   }
 
@@ -117,9 +117,9 @@ export default function ProfilePage() {
             />
             
             {/* Profile Picture */}
-            {user?.profile?.photoURL ? (
+            {user?.profile?.avatar ? (
               <img
-                src={user.profile.photoURL}
+                src={user.profile.avatar}
                 alt="Profile"
                 className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-lg"
               />
@@ -144,7 +144,7 @@ export default function ProfilePage() {
             </button>
 
             {/* Remove photo button (show on hover if photo exists) */}
-            {user?.profile?.photoURL && (
+            {user?.profile?.avatar && (
               <button
                 onClick={handleRemovePhoto}
                 className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
@@ -168,7 +168,7 @@ export default function ProfilePage() {
               className="mt-2 text-sm text-primary-500 hover:text-primary-600 font-medium flex items-center gap-1"
             >
               <PhotoIcon className="w-4 h-4" />
-              {user?.profile?.photoURL ? 'Change Photo' : 'Upload Photo'}
+              {user?.profile?.avatar ? 'Change Photo' : 'Upload Photo'}
             </button>
           </div>
         </div>

@@ -25,7 +25,7 @@ export default function SettingsPage() {
 
   const { register: registerPrefs, handleSubmit: handlePrefs, formState: { isSubmitting: isSubmittingPrefs } } = useForm({
     defaultValues: {
-      currency: user?.preferences?.currency || 'INR',
+      currency: user?.preferences?.currency || 'LKR',
       language: user?.preferences?.language || 'en',
       dateFormat: user?.preferences?.dateFormat || 'DD/MM/YYYY'
     }
@@ -149,6 +149,7 @@ export default function SettingsPage() {
               <Select
                 label="Currency"
                 options={[
+                  { value: 'LKR', label: 'Rs. Sri Lankan Rupee (LKR)' },
                   { value: 'INR', label: '₹ Indian Rupee (INR)' },
                   { value: 'USD', label: '$ US Dollar (USD)' },
                   { value: 'EUR', label: '€ Euro (EUR)' },
@@ -160,7 +161,9 @@ export default function SettingsPage() {
                 label="Language"
                 options={[
                   { value: 'en', label: 'English' },
-                  { value: 'hi', label: 'Hindi' }
+                  { value: 'si', label: 'සිංහල (Sinhala)' },
+                  { value: 'ta', label: 'தமிழ் (Tamil)' },
+                  { value: 'hi', label: 'हिन्दी (Hindi)' }
                 ]}
                 {...registerPrefs('language')}
               />

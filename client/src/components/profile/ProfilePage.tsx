@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
@@ -8,12 +8,16 @@ import {
   CameraIcon,
   EnvelopeIcon,
   PhoneIcon,
-  CalendarIcon
+  CalendarIcon,
+  PhotoIcon,
+  TrashIcon
 } from '@heroicons/react/24/outline'
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuthStore()
   const [isEditing, setIsEditing] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
     defaultValues: {
@@ -37,6 +41,52 @@ export default function ProfilePage() {
     }
   }
 
+  const handlePhotoClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB')
+      return
+    }
+
+    setUploadingPhoto(true)
+    try {
+      // Convert to base64 for local storage
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const base64 = reader.result as string
+        updateUser({ profile: { ...user?.profile, photoURL: base64 } })
+        toast.success('Profile picture updated!')
+        setUploadingPhoto(false)
+      }
+      reader.onerror = () => {
+        toast.error('Failed to read image file')
+        setUploadingPhoto(false)
+      }
+      reader.readAsDataURL(file)
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update profile picture')
+      setUploadingPhoto(false)
+    }
+  }
+
+  const handleRemovePhoto = () => {
+    updateUser({ profile: { ...user?.profile, photoURL: undefined } })
+    toast.success('Profile picture removed')
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -56,13 +106,53 @@ export default function ProfilePage() {
       {/* Profile Card */}
       <Card>
         <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-gray-200 dark:border-gray-700">
-          <div className="relative">
-            <div className="w-24 h-24 rounded-full gradient-green flex items-center justify-center text-white text-3xl font-bold">
-              {user?.profile?.firstName?.[0]?.toUpperCase() || 'U'}
-            </div>
-            <button className="absolute bottom-0 right-0 w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white hover:bg-primary-600 transition-colors">
-              <CameraIcon className="w-4 h-4" />
+          <div className="relative group">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoChange}
+              className="hidden"
+            />
+            
+            {/* Profile Picture */}
+            {user?.profile?.photoURL ? (
+              <img
+                src={user.profile.photoURL}
+                alt="Profile"
+                className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-lg"
+              />
+            ) : (
+              <div className="w-24 h-24 rounded-full gradient-green flex items-center justify-center text-white text-3xl font-bold border-4 border-white dark:border-gray-700 shadow-lg">
+                {user?.profile?.firstName?.[0]?.toUpperCase() || 'U'}
+              </div>
+            )}
+            
+            {/* Upload/Change button */}
+            <button
+              onClick={handlePhotoClick}
+              disabled={uploadingPhoto}
+              className="absolute bottom-0 right-0 w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Change profile picture"
+            >
+              {uploadingPhoto ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <CameraIcon className="w-4 h-4" />
+              )}
             </button>
+
+            {/* Remove photo button (show on hover if photo exists) */}
+            {user?.profile?.photoURL && (
+              <button
+                onClick={handleRemovePhoto}
+                className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                title="Remove profile picture"
+              >
+                <TrashIcon className="w-3 h-3" />
+              </button>
+            )}
           </div>
           <div className="text-center sm:text-left">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -72,6 +162,14 @@ export default function ProfilePage() {
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
               Member since {new Date(user?.createdAt || '').toLocaleDateString('en-LK', { month: 'long', year: 'numeric' })}
             </p>
+            <button
+              onClick={handlePhotoClick}
+              disabled={uploadingPhoto}
+              className="mt-2 text-sm text-primary-500 hover:text-primary-600 font-medium flex items-center gap-1"
+            >
+              <PhotoIcon className="w-4 h-4" />
+              {user?.profile?.photoURL ? 'Change Photo' : 'Upload Photo'}
+            </button>
           </div>
         </div>
 
@@ -112,9 +210,9 @@ export default function ProfilePage() {
                 {...register('occupation')}
               />
               <Input
-                label="Monthly Income (₹)"
+                label="Monthly Income (Rs.)"
                 type="number"
-                placeholder="50000"
+                placeholder="100000"
                 {...register('monthlyIncome')}
               />
             </div>
@@ -186,7 +284,7 @@ export default function ProfilePage() {
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Monthly Income</p>
                 <p className="font-medium text-gray-900 dark:text-white">
                   {user?.profile?.monthlyIncome 
-                    ? `₹${Number(user.profile.monthlyIncome).toLocaleString('en-IN')}`
+                    ? `Rs. ${Number(user.profile.monthlyIncome).toLocaleString('en-LK')}`
                     : 'Not set'}
                 </p>
               </div>

@@ -65,7 +65,7 @@ interface MarketPrediction {
 
 export default function GlobalMarketsPage() {
   const [loading, setLoading] = useState(true)
-  const [activeRegion, setActiveRegion] = useState<'all' | 'americas' | 'europe' | 'asia'>('all')
+  const [activeRegion, setActiveRegion] = useState<'all' | 'americas' | 'europe' | 'asia' | 'srilanka'>('all')
   const [activeTab, setActiveTab] = useState<'overview' | 'predictions' | 'advice'>('overview')
 
   useEffect(() => {
@@ -98,6 +98,9 @@ export default function GlobalMarketsPage() {
     { name: 'ASX 200', country: 'Australia', flag: '🇦🇺', value: 7589.23, change: 34.56, changePercent: 0.46, status: 'closed' },
     { name: 'KOSPI', country: 'South Korea', flag: '🇰🇷', value: 2655.28, change: 23.45, changePercent: 0.89, status: 'closed' },
     { name: 'Straits Times', country: 'Singapore', flag: '🇸🇬', value: 3187.45, change: -8.23, changePercent: -0.26, status: 'closed' },
+    // Sri Lanka
+    { name: 'CSE All Share (ASPI)', country: 'Sri Lanka', flag: '🇱🇰', value: 11234.56, change: 45.23, changePercent: 0.40, status: 'closed' },
+    { name: 'S&P Sri Lanka 20', country: 'Sri Lanka', flag: '🇱🇰', value: 3456.78, change: 12.34, changePercent: 0.36, status: 'closed' },
   ]
 
   // Currency Exchange Rates (against LKR)
@@ -243,6 +246,8 @@ export default function GlobalMarketsPage() {
         return globalIndices.filter(i => ['UK', 'Germany', 'France', 'Europe', 'Switzerland'].includes(i.country))
       case 'asia':
         return globalIndices.filter(i => ['Japan', 'China', 'Hong Kong', 'India', 'Australia', 'South Korea', 'Singapore'].includes(i.country))
+      case 'srilanka':
+        return globalIndices.filter(i => i.country === 'Sri Lanka')
       default:
         return globalIndices
     }
@@ -373,7 +378,8 @@ export default function GlobalMarketsPage() {
               { key: 'all', label: 'All Markets', icon: '🌍' },
               { key: 'americas', label: 'Americas', icon: '🌎' },
               { key: 'europe', label: 'Europe', icon: '🌍' },
-              { key: 'asia', label: 'Asia Pacific', icon: '🌏' }
+              { key: 'asia', label: 'Asia Pacific', icon: '🌏' },
+              { key: 'srilanka', label: 'Sri Lanka', icon: '🇱🇰' }
             ].map((region) => (
               <button
                 key={region.key}

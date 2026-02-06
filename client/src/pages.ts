@@ -1,17 +1,23 @@
-export { default as Dashboard } from './components/dashboard/Dashboard'
-export { default as IncomePage } from './components/income/IncomePage'
-export { default as ExpensesPage } from './components/expenses/ExpensesPage'
-export { default as SavingsPage } from './components/savings/SavingsPage'
-export { default as InvestmentsPage } from './components/investments/InvestmentsPage'
-export { default as BudgetsPage } from './components/budgets/BudgetsPage'
-export { default as AnalyticsPage } from './components/analytics/AnalyticsPage'
-export { default as InsightsPage } from './components/insights/InsightsPage'
-export { default as MarketPage } from './components/market/MarketPage'
-export { default as SettingsPage } from './components/settings/SettingsPage'
-export { default as ProfilePage } from './components/profile/ProfilePage'
-export { default as LoginPage } from './components/auth/LoginPage'
-export { default as RegisterPage } from './components/auth/RegisterPage'
-export { default as NotFoundPage } from './components/NotFoundPage'
+import { lazy } from 'react'
 
+// Lazy load all pages for better code splitting
+export const Dashboard = lazy(() => import('./components/dashboard/Dashboard'))
+export const IncomePage = lazy(() => import('./components/income/IncomePage'))
+export const ExpensesPage = lazy(() => import('./components/expenses/ExpensesPage'))
+export const SavingsPage = lazy(() => import('./components/savings/SavingsPage'))
+export const InvestmentsPage = lazy(() => import('./components/investments/InvestmentsPage'))
+export const BudgetsPage = lazy(() => import('./components/budgets/BudgetsPage'))
+export const AnalyticsPage = lazy(() => import('./components/analytics/AnalyticsPage'))
+export const InsightsPage = lazy(() => import('./components/insights/InsightsPage'))
+export const MarketPage = lazy(() => import('./components/market/MarketPage'))
+export const GlobalMarketsPage = lazy(() => import('./components/market/GlobalMarketsPage'))
+export const CryptoMarketPage = lazy(() => import('./components/market/CryptoMarketPage'))
+export const SettingsPage = lazy(() => import('./components/settings/SettingsPage'))
+export const ProfilePage = lazy(() => import('./components/profile/ProfilePage'))
+export const LoginPage = lazy(() => import('./components/auth/LoginPage'))
+export const RegisterPage = lazy(() => import('./components/auth/RegisterPage'))
+export const NotFoundPage = lazy(() => import('./components/NotFoundPage'))
+
+// Layouts don't need lazy loading - they're always needed
 export { default as AuthLayout } from './layouts/AuthLayout'
 export { default as DashboardLayout } from './layouts/DashboardLayout'

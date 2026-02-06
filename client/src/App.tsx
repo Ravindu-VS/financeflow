@@ -1,31 +1,38 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import { useEffect } from 'react'
+import { useEffect, Suspense, lazy } from 'react'
 import { useAuthStore } from './store/authStore'
 import { useThemeStore } from './store/themeStore'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
 
-// Layouts
+// Layouts (load immediately)
 import AuthLayout from './layouts/AuthLayout'
 import DashboardLayout from './layouts/DashboardLayout'
 
-// Pages
-import Dashboard from './components/dashboard/Dashboard'
-import IncomePage from './components/income/IncomePage'
-import ExpensesPage from './components/expenses/ExpensesPage'
-import SavingsPage from './components/savings/SavingsPage'
-import InvestmentsPage from './components/investments/InvestmentsPage'
-import BudgetsPage from './components/budgets/BudgetsPage'
-import AnalyticsPage from './components/analytics/AnalyticsPage'
-import InsightsPage from './components/insights/InsightsPage'
-import MarketPage from './components/market/MarketPage'
-import SettingsPage from './components/settings/SettingsPage'
-import ProfilePage from './components/profile/ProfilePage'
-import GlobalMarketsPage from './components/market/GlobalMarketsPage'
-import CryptoMarketPage from './components/market/CryptoMarketPage'
-import LoginPage from './components/auth/LoginPage'
-import RegisterPage from './components/auth/RegisterPage'
-import NotFoundPage from './components/NotFoundPage'
+// Lazy load all pages for better performance
+const Dashboard = lazy(() => import('./components/dashboard/Dashboard'))
+const IncomePage = lazy(() => import('./components/income/IncomePage'))
+const ExpensesPage = lazy(() => import('./components/expenses/ExpensesPage'))
+const SavingsPage = lazy(() => import('./components/savings/SavingsPage'))
+const InvestmentsPage = lazy(() => import('./components/investments/InvestmentsPage'))
+const BudgetsPage = lazy(() => import('./components/budgets/BudgetsPage'))
+const AnalyticsPage = lazy(() => import('./components/analytics/AnalyticsPage'))
+const InsightsPage = lazy(() => import('./components/insights/InsightsPage'))
+const MarketPage = lazy(() => import('./components/market/MarketPage'))
+const GlobalMarketsPage = lazy(() => import('./components/market/GlobalMarketsPage'))
+const CryptoMarketPage = lazy(() => import('./components/market/CryptoMarketPage'))
+const SettingsPage = lazy(() => import('./components/settings/SettingsPage'))
+const ProfilePage = lazy(() => import('./components/profile/ProfilePage'))
+const LoginPage = lazy(() => import('./components/auth/LoginPage'))
+const RegisterPage = lazy(() => import('./components/auth/RegisterPage'))
+const NotFoundPage = lazy(() => import('./components/NotFoundPage'))
+
+// Loading spinner component
+const PageLoader = () => (
+  <div className="min-h-[400px] flex items-center justify-center">
+    <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-500 border-t-transparent"></div>
+  </div>
+)
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -88,29 +95,30 @@ function App() {
   return (
     <BrowserRouter basename="/financeflow">
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-        <Routes>
-          {/* Public Routes */}
-          <Route element={<AuthLayout />}>
-            <Route
-              path="/login"
-              element={
-                <PublicRoute>
-                  <LoginPage />
-                </PublicRoute>
-              }
-            />
-            <Route
-              path="/register"
-              element={
-                <PublicRoute>
-                  <RegisterPage />
-                </PublicRoute>
-              }
-            />
-          </Route>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            {/* Public Routes */}
+            <Route element={<AuthLayout />}>
+              <Route
+                path="/login"
+                element={
+                  <PublicRoute>
+                    <LoginPage />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/register"
+                element={
+                  <PublicRoute>
+                    <RegisterPage />
+                  </PublicRoute>
+                }
+              />
+            </Route>
 
-          {/* Protected Routes */}
-          <Route
+            {/* Protected Routes */}
+            <Route
             element={
               <ProtectedRoute>
                 <DashboardLayout />
@@ -138,6 +146,7 @@ function App() {
           {/* 404 Page */}
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
       </div>
 
       <Toaster

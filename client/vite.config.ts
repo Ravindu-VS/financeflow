@@ -53,6 +53,20 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split vendor chunks for better caching
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          'vendor-charts': ['recharts', 'chart.js', 'react-chartjs-2'],
+          'vendor-ui': ['@heroicons/react', '@headlessui/react']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 600
+  },
   server: {
     port: 3000,
     proxy: {

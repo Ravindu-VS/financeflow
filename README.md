@@ -275,7 +275,7 @@ This project is licensed under the MIT License.
 ---
 
 <p align="center">
-  Made with ❤️ for Sri Lankan finance enthusiasts
+  Made by Ravindu Vinusha
   <br>
   <a href="https://github.com/YOUR_USERNAME/financeflow">⭐ Star this repo</a>
 </p>

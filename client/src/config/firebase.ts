@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, enableIndexedDbPersistence, CACHE_SIZE_UNLIMITED } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: "AIzaSyA0uQFX5CE0JPGxBoA3NUeCw4QOCCe4fjo",
@@ -18,6 +18,16 @@ const app = initializeApp(firebaseConfig)
 // Initialize services
 export const auth = getAuth(app)
 export const db = getFirestore(app)
+
+// Enable offline persistence for faster loads
+enableIndexedDbPersistence(db, { forceOwnership: false })
+  .catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.log('Persistence failed: multiple tabs open')
+    } else if (err.code === 'unimplemented') {
+      console.log('Persistence not available in this browser')
+    }
+  })
 
 // Analytics is optional and may be blocked by ad blockers
 export let analytics: any = null

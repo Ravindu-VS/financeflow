@@ -26,6 +26,40 @@ import {
 } from 'firebase/auth'
 import { db, auth } from '../config/firebase'
 
+// ======= CACHING LAYER =======
+interface CacheEntry<T> {
+  data: T
+  timestamp: number
+}
+
+const cache = new Map<string, CacheEntry<any>>()
+const CACHE_TTL = 60000 // 1 minute cache
+const SHORT_CACHE_TTL = 30000 // 30 seconds for frequently changing data
+
+function getCached<T>(key: string): T | null {
+  const entry = cache.get(key)
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
+    return entry.data
+  }
+  cache.delete(key)
+  return null
+}
+
+function setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): T {
+  cache.set(key, { data, timestamp: Date.now() })
+  return data
+}
+
+export function clearCache(prefix?: string) {
+  if (prefix) {
+    for (const key of cache.keys()) {
+      if (key.startsWith(prefix)) cache.delete(key)
+    }
+  } else {
+    cache.clear()
+  }
+}
+
 // Google Auth Provider
 const googleProvider = new GoogleAuthProvider()
 
@@ -155,7 +189,7 @@ export const authService = {
   }
 }
 
-// Generic Firestore CRUD operations
+// Generic Firestore CRUD operations - clears cache on mutations
 const createCRUD = (collectionName: string) => ({
   async create(data: any) {
     const user = auth.currentUser
@@ -167,6 +201,7 @@ const createCRUD = (collectionName: string) => ({
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now()
     })
+    clearCache(`userData_${user.uid}`) // Clear cache after write
     return { id: docRef.id, ...data }
   },
 
@@ -194,17 +229,21 @@ const createCRUD = (collectionName: string) => ({
   },
 
   async update(id: string, data: any) {
+    const user = auth.currentUser
     const docRef = doc(db, collectionName, id)
     await updateDoc(docRef, {
       ...data,
       updatedAt: Timestamp.now()
     })
+    if (user) clearCache(`userData_${user.uid}`) // Clear cache after write
     return { id, ...data }
   },
 
   async delete(id: string) {
+    const user = auth.currentUser
     const docRef = doc(db, collectionName, id)
     await deleteDoc(docRef)
+    if (user) clearCache(`userData_${user.uid}`) // Clear cache after write
     return { id }
   }
 })
@@ -348,35 +387,42 @@ export const budgetService = {
   }
 }
 
-// Analytics Service
+// Analytics Service - OPTIMIZED with caching and parallel queries
 export const analyticsService = {
-  async getOverview() {
+  // Fetch all user data in one batch - reused across methods
+  async _fetchAllUserData() {
     const user = auth.currentUser
     if (!user) throw new Error('Not authenticated')
+    
+    const cacheKey = `userData_${user.uid}`
+    const cached = getCached<any>(cacheKey)
+    if (cached) return cached
 
-    // Get all incomes
-    const incomeQuery = query(collection(db, 'incomes'), where('userId', '==', user.uid))
-    const incomeSnapshot = await getDocs(incomeQuery)
-    const incomes = incomeSnapshot.docs.map(doc => doc.data())
-    const totalIncome = incomes.reduce((sum, inc) => sum + (inc.amount || 0), 0)
+    // Run ALL queries in parallel
+    const [incomeSnapshot, expenseSnapshot, investmentSnapshot, savingsSnapshot] = await Promise.all([
+      getDocs(query(collection(db, 'incomes'), where('userId', '==', user.uid), limit(500))),
+      getDocs(query(collection(db, 'expenses'), where('userId', '==', user.uid), limit(500))),
+      getDocs(query(collection(db, 'investments'), where('userId', '==', user.uid), limit(100))),
+      getDocs(query(collection(db, 'savingsGoals'), where('userId', '==', user.uid), limit(50)))
+    ])
 
-    // Get all expenses
-    const expenseQuery = query(collection(db, 'expenses'), where('userId', '==', user.uid))
-    const expenseSnapshot = await getDocs(expenseQuery)
-    const expenses = expenseSnapshot.docs.map(doc => doc.data())
-    const totalExpenses = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0)
+    const data = {
+      incomes: incomeSnapshot.docs.map(doc => doc.data()),
+      expenses: expenseSnapshot.docs.map(doc => doc.data()),
+      investments: investmentSnapshot.docs.map(doc => doc.data()),
+      savingsGoals: savingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    }
 
-    // Get investments
-    const investmentQuery = query(collection(db, 'investments'), where('userId', '==', user.uid))
-    const investmentSnapshot = await getDocs(investmentQuery)
-    const investments = investmentSnapshot.docs.map(doc => doc.data())
-    const investmentValue = investments.reduce((sum, inv) => sum + (inv.currentValue || inv.amount || 0), 0)
+    return setCache(cacheKey, data, SHORT_CACHE_TTL)
+  },
 
-    // Get savings goals
-    const savingsQuery = query(collection(db, 'savingsGoals'), where('userId', '==', user.uid))
-    const savingsSnapshot = await getDocs(savingsQuery)
-    const savingsGoals = savingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-
+  async getOverview() {
+    const data = await this._fetchAllUserData()
+    
+    const totalIncome = data.incomes.reduce((sum: number, inc: any) => sum + (inc.amount || 0), 0)
+    const totalExpenses = data.expenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0)
+    const investmentValue = data.investments.reduce((sum: number, inv: any) => sum + (inv.currentValue || inv.amount || 0), 0)
+    
     const netSavings = totalIncome - totalExpenses
     const savingsRate = totalIncome > 0 ? (netSavings / totalIncome) * 100 : 0
 
@@ -386,52 +432,41 @@ export const analyticsService = {
       netSavings,
       investmentValue,
       savingsRate,
-      savingsGoals,
-      avgDailyExpense: expenses.length > 0 ? totalExpenses / 30 : 0
+      savingsGoals: data.savingsGoals,
+      avgDailyExpense: data.expenses.length > 0 ? totalExpenses / 30 : 0
     }
   },
 
   async getTrends(period: 'week' | 'month' | 'year' = 'month') {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
-
+    const data = await this._fetchAllUserData()
+    
     const now = new Date()
     let months = 6
-
     if (period === 'week') months = 1
     if (period === 'year') months = 12
-
     const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1)
 
-    // Get incomes
-    const incomeQuery = query(
-      collection(db, 'incomes'),
-      where('userId', '==', user.uid),
-      where('date', '>=', Timestamp.fromDate(startDate))
-    )
-    const incomeSnapshot = await getDocs(incomeQuery)
-    const incomes = incomeSnapshot.docs.map(doc => doc.data())
-
-    // Get expenses
-    const expenseQuery = query(
-      collection(db, 'expenses'),
-      where('userId', '==', user.uid),
-      where('date', '>=', Timestamp.fromDate(startDate))
-    )
-    const expenseSnapshot = await getDocs(expenseQuery)
-    const expenses = expenseSnapshot.docs.map(doc => doc.data())
+    // Filter locally instead of new queries
+    const filteredIncomes = data.incomes.filter((inc: any) => {
+      const date = inc.date?.toDate ? inc.date.toDate() : new Date(inc.date)
+      return date >= startDate
+    })
+    const filteredExpenses = data.expenses.filter((exp: any) => {
+      const date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date)
+      return date >= startDate
+    })
 
     // Group by month
     const monthlyData: Record<string, { income: number; expense: number }> = {}
 
-    incomes.forEach(inc => {
+    filteredIncomes.forEach((inc: any) => {
       const date = inc.date?.toDate ? inc.date.toDate() : new Date(inc.date)
       const key = `${date.getFullYear()}-${date.getMonth() + 1}`
       if (!monthlyData[key]) monthlyData[key] = { income: 0, expense: 0 }
       monthlyData[key].income += inc.amount || 0
     })
 
-    expenses.forEach(exp => {
+    filteredExpenses.forEach((exp: any) => {
       const date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date)
       const key = `${date.getFullYear()}-${date.getMonth() + 1}`
       if (!monthlyData[key]) monthlyData[key] = { income: 0, expense: 0 }
@@ -447,27 +482,16 @@ export const analyticsService = {
   },
 
   async getCategoryBreakdown() {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
-
-    // Get expense totals by category
-    const expenseQuery = query(collection(db, 'expenses'), where('userId', '==', user.uid))
-    const expenseSnapshot = await getDocs(expenseQuery)
-    const expenses = expenseSnapshot.docs.map(doc => doc.data())
+    const data = await this._fetchAllUserData()
 
     const expenseByCategory: Record<string, number> = {}
-    expenses.forEach(exp => {
+    data.expenses.forEach((exp: any) => {
       const category = exp.category || 'Other'
       expenseByCategory[category] = (expenseByCategory[category] || 0) + (exp.amount || 0)
     })
 
-    // Get income totals by source
-    const incomeQuery = query(collection(db, 'incomes'), where('userId', '==', user.uid))
-    const incomeSnapshot = await getDocs(incomeQuery)
-    const incomes = incomeSnapshot.docs.map(doc => doc.data())
-
     const incomeBySource: Record<string, number> = {}
-    incomes.forEach(inc => {
+    data.incomes.forEach((inc: any) => {
       const source = inc.category || inc.source || 'Other'
       incomeBySource[source] = (incomeBySource[source] || 0) + (inc.amount || 0)
     })

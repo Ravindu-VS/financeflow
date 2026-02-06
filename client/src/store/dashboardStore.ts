@@ -12,6 +12,7 @@ interface Summary {
   expenseByCategory: { _id: string; total: number }[]
   incomeBySource: { _id: string; total: number }[]
   financialHealth?: any
+  recentTransactions?: any[]
 }
 
 interface Cashflow {

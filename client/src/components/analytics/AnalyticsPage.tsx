@@ -85,11 +85,8 @@ export default function AnalyticsPage() {
     color: COLORS[index % COLORS.length]
   })) || []
 
-  // Daily spending pattern (mock data - would come from API)
-  const dailySpending = Array.from({ length: 7 }, (_, i) => ({
-    day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i],
-    amount: Math.floor(Math.random() * 2000) + 500
-  }))
+  // Daily spending pattern from API or empty
+  const dailySpending = data?.categoryData?.dailySpending || []
 
   const stats = data?.overview || {}
 
@@ -261,6 +258,7 @@ export default function AnalyticsPage() {
       {/* Daily Spending Pattern */}
       <Card>
         <SectionHeader title="Weekly Spending Pattern" subtitle="Daily average spending" />
+        {dailySpending.length > 0 ? (
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={dailySpending}>
@@ -275,11 +273,21 @@ export default function AnalyticsPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        ) : (
+          <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+            <div className="text-center">
+              <ChartBarIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No spending data yet</p>
+              <p className="text-sm mt-1">Add expenses to see your weekly pattern</p>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Top Expenses */}
       <Card>
         <SectionHeader title="Top Expense Categories" subtitle="Highest spending areas" />
+        {categoryBreakdown.length > 0 ? (
         <div className="space-y-4">
           {categoryBreakdown.slice(0, 5).map((cat: any, index: number) => {
             const total = categoryBreakdown.reduce((sum: number, c: any) => sum + c.value, 0)
@@ -303,6 +311,13 @@ export default function AnalyticsPage() {
             )
           })}
         </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <ChartBarIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+            <p>No expense categories yet</p>
+            <p className="text-sm mt-1">Add expenses to see category breakdown</p>
+          </div>
+        )}
       </Card>
     </div>
   )

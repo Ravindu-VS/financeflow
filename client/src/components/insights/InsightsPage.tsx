@@ -85,57 +85,13 @@ export default function InsightsPage() {
     )
   }
 
-  // Generate mock insights if API doesn't return data
-  const mockInsights: Insight[] = [
-    {
-      type: 'warning',
-      title: 'High Dining Expenses',
-      description: 'Your food spending is 40% higher than last month. Consider cooking at home more often.',
-      priority: 'high',
-      action: 'Review food expenses',
-      value: 8500
-    },
-    {
-      type: 'suggestion',
-      title: 'Unused Subscriptions',
-      description: 'You have 3 subscriptions with low usage. Canceling them could save ₹1,500/month.',
-      priority: 'medium',
-      action: 'Review subscriptions',
-      value: 1500
-    },
-    {
-      type: 'opportunity',
-      title: 'Emergency Fund Opportunity',
-      description: 'Your savings rate is strong. Consider allocating 20% to an emergency fund.',
-      priority: 'low',
-      action: 'Set up emergency fund'
-    },
-    {
-      type: 'prediction',
-      title: 'Expense Forecast',
-      description: 'Based on your patterns, next month\'s expenses are predicted to be around ₹45,000.',
-      priority: 'low',
-      value: 45000
-    }
-  ]
+  // Use actual API data - empty arrays if no data
+  const displayInsights: Insight[] = predictions?.insights || []
+  const displaySuggestions = savingSuggestions || []
+  const displayInvestmentRecs = investmentRecs || []
 
-  // Use mock data if API data is empty
-  const displayInsights = mockInsights
-  const displaySuggestions = savingSuggestions.length > 0 ? savingSuggestions : [
-    { title: 'Switch to Generic Brands', description: 'Save up to 30% on groceries by choosing store brands', potentialSavings: 2000 },
-    { title: 'Carpool to Work', description: 'Share rides with colleagues to cut transport costs', potentialSavings: 1500 },
-    { title: 'Cancel Unused Gym Membership', description: 'Consider home workouts or outdoor exercise', potentialSavings: 1200 },
-    { title: 'Use Cashback Apps', description: 'Earn 2-5% back on everyday purchases', potentialSavings: 800 }
-  ]
-  
-  const displayInvestmentRecs = investmentRecs.length > 0 ? investmentRecs : [
-    { title: 'Index Funds', description: 'Low-cost diversification for long-term growth', riskLevel: 'medium', expectedReturn: '12-15%' },
-    { title: 'PPF Account', description: 'Tax-free returns with government backing', riskLevel: 'low', expectedReturn: '7.1%' },
-    { title: 'Debt Mutual Funds', description: 'Stable returns with moderate liquidity', riskLevel: 'low', expectedReturn: '6-8%' },
-    { title: 'Gold ETFs', description: 'Hedge against inflation and market volatility', riskLevel: 'medium', expectedReturn: '8-10%' }
-  ]
-
-  const financialHealthScore = healthScore?.score || 72
+  const financialHealthScore = healthScore?.score || 0
+  const hasUserData = displayInsights.length > 0 || displaySuggestions.length > 0 || healthScore?.score
 
   return (
     <div className="space-y-6">
@@ -237,6 +193,7 @@ export default function InsightsPage() {
           title="Key Insights" 
           subtitle="Important observations about your finances"
         />
+        {displayInsights.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {displayInsights.map((insight, index) => (
             <div
@@ -271,6 +228,13 @@ export default function InsightsPage() {
             </div>
           ))}
         </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <LightBulbIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+            <p>No insights available yet</p>
+            <p className="text-sm mt-1">Add income and expenses to get personalized insights</p>
+          </div>
+        )}
       </Card>
 
       {/* Saving Suggestions */}
@@ -279,6 +243,7 @@ export default function InsightsPage() {
           title="Money-Saving Suggestions" 
           subtitle="Practical ways to reduce expenses"
         />
+        {displaySuggestions.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {displaySuggestions.map((suggestion: any, index: number) => (
             <div
@@ -296,6 +261,13 @@ export default function InsightsPage() {
             </div>
           ))}
         </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <BanknotesIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+            <p>No saving suggestions yet</p>
+            <p className="text-sm mt-1">Track your expenses to get personalized saving tips</p>
+          </div>
+        )}
       </Card>
 
       {/* Investment Recommendations */}
@@ -304,6 +276,7 @@ export default function InsightsPage() {
           title="Investment Recommendations" 
           subtitle="Opportunities to grow your wealth"
         />
+        {displayInvestmentRecs.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {displayInvestmentRecs.map((rec: any, index: number) => (
             <div
@@ -328,6 +301,13 @@ export default function InsightsPage() {
             </div>
           ))}
         </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <ChartBarIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+            <p>No investment recommendations yet</p>
+            <p className="text-sm mt-1">Add your financial data to get personalized investment advice</p>
+          </div>
+        )}
       </Card>
 
       {/* AI Predictions */}

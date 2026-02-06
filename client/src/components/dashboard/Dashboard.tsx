@@ -51,14 +51,8 @@ export default function Dashboard() {
     color: COLORS[index % COLORS.length]
   })) || []
 
-  // Recent transactions mock data (would come from API)
-  const recentTransactions = [
-    { id: 1, type: 'expense', category: 'Food', amount: 2500, date: '2024-01-15', description: 'Keells Super purchase' },
-    { id: 2, type: 'income', category: 'Salary', amount: 185000, date: '2024-01-01', description: 'Monthly salary' },
-    { id: 3, type: 'expense', category: 'Transport', amount: 5000, date: '2024-01-14', description: 'Petrol - Lanka IOC' },
-    { id: 4, type: 'expense', category: 'Entertainment', amount: 1500, date: '2024-01-13', description: 'Dialog TV subscription' },
-    { id: 5, type: 'expense', category: 'Bills', amount: 8500, date: '2024-01-10', description: 'CEB electricity bill' },
-  ]
+  // Recent transactions from summary data
+  const recentTransactions = summary?.recentTransactions || []
 
   if (loading) {
     return (
@@ -184,6 +178,7 @@ export default function Dashboard() {
             title="Recent Transactions" 
             action={<a href="/expenses" className="text-sm text-primary-500 hover:text-primary-600">View all</a>}
           />
+          {recentTransactions.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -195,8 +190,8 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {recentTransactions.map((tx) => (
-                  <tr key={tx.id} className="border-b dark:border-gray-700/50 last:border-0">
+                {recentTransactions.map((tx: any) => (
+                  <tr key={tx.id || tx._id} className="border-b dark:border-gray-700/50 last:border-0">
                     <td className="py-3">
                       <div className="flex items-center gap-3">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -229,6 +224,18 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <CreditCardIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No transactions yet</p>
+              <p className="text-sm mt-1">Add your first income or expense to get started</p>
+              <div className="flex gap-2 justify-center mt-4">
+                <a href="/income" className="text-primary-500 hover:text-primary-600 text-sm">Add Income</a>
+                <span className="text-gray-400">|</span>
+                <a href="/expenses" className="text-primary-500 hover:text-primary-600 text-sm">Add Expense</a>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Quick Actions & Goals */}

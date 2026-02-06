@@ -36,11 +36,7 @@ const PageLoader = () => (
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading, checkAuth } = useAuthStore()
-
-  useEffect(() => {
-    checkAuth()
-  }, [checkAuth])
+  const { isAuthenticated, isLoading } = useAuthStore()
 
   if (isLoading) {
     return (
@@ -59,11 +55,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Public Route (redirect to dashboard if authenticated)
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading, checkAuth } = useAuthStore()
-
-  useEffect(() => {
-    checkAuth()
-  }, [checkAuth])
+  const { isAuthenticated, isLoading } = useAuthStore()
 
   if (isLoading) {
     return (
@@ -82,6 +74,13 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   const { theme } = useThemeStore()
+  const initAuth = useAuthStore((state) => state.initAuth)
+
+  // Initialize Firebase Auth listener once on app mount
+  useEffect(() => {
+    const unsubscribe = initAuth()
+    return () => unsubscribe()
+  }, [initAuth])
 
   useEffect(() => {
     // Apply theme class to document

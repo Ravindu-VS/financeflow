@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
-import { authService } from '../../services/firebaseService'
 import { Button, Input } from '../ui'
 import { EyeIcon, EyeSlashIcon, EnvelopeIcon, LockClosedIcon } from '@heroicons/react/24/outline'
 
@@ -16,7 +15,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const { login, loginWithGoogle, isAuthenticated } = useAuthStore()
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormData>()
 
@@ -33,9 +32,13 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true)
-      await authService.loginWithGoogle()
-      toast.success('Welcome!')
-      navigate('/dashboard')
+      await loginWithGoogle()
+      // If we get here and authenticated, navigate (popup flow)
+      // If redirect was used, page will reload and auth state will handle it
+      if (isAuthenticated) {
+        toast.success('Welcome!')
+        navigate('/dashboard')
+      }
     } catch (error: any) {
       toast.error(error.message || 'Google sign-in failed')
     } finally {

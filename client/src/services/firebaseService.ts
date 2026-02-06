@@ -18,6 +18,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
@@ -108,12 +110,40 @@ export const authService = {
     return userCredential.user
   },
 
-  // Login with Google
+  // Login with Google (try popup first, fallback to redirect)
   async loginWithGoogle() {
-    const result = await signInWithPopup(auth, googleProvider)
-    const user = result.user
+    try {
+      const result = await signInWithPopup(auth, googleProvider)
+      const user = result.user
+      await this._ensureUserProfile(user)
+      return user
+    } catch (error: any) {
+      // If popup is blocked, try redirect
+      if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+        await signInWithRedirect(auth, googleProvider)
+        return null // Will be handled on redirect return
+      }
+      throw error
+    }
+  },
 
-    // Check if user profile exists, if not create one
+  // Check for redirect result (call on app init)
+  async checkRedirectResult() {
+    try {
+      const result = await getRedirectResult(auth)
+      if (result?.user) {
+        await this._ensureUserProfile(result.user)
+        return result.user
+      }
+      return null
+    } catch (error) {
+      console.error('Redirect result error:', error)
+      return null
+    }
+  },
+
+  // Helper to create user profile if needed
+  async _ensureUserProfile(user: User) {
     const existingProfile = await this.getUserProfile(user.uid)
     if (!existingProfile) {
       const nameParts = user.displayName?.split(' ') || ['User']
@@ -130,7 +160,7 @@ export const authService = {
           monthlyIncome: 0
         },
         preferences: {
-          currency: 'INR',
+          currency: 'LKR',
           language: 'en',
           dateFormat: 'DD/MM/YYYY',
           emailNotifications: true,
@@ -141,8 +171,6 @@ export const authService = {
         updatedAt: Timestamp.now()
       })
     }
-
-    return user
   },
 
   // Logout

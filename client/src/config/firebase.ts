@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
-import { getFirestore, enableIndexedDbPersistence, CACHE_SIZE_UNLIMITED } from 'firebase/firestore'
+import { getAuth, browserLocalPersistence, setPersistence } from 'firebase/auth'
+import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: "AIzaSyA0uQFX5CE0JPGxBoA3NUeCw4QOCCe4fjo",
@@ -19,7 +19,12 @@ const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
 
-// Enable offline persistence for faster loads
+// Set auth persistence to LOCAL (survives browser restart)
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.log('Auth persistence error:', err)
+})
+
+// Enable offline persistence for Firestore
 enableIndexedDbPersistence(db, { forceOwnership: false })
   .catch((err) => {
     if (err.code === 'failed-precondition') {

@@ -60,26 +60,45 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   // Initialize auth listener - call this once on app start
   initAuth: () => {
-    const isPendingRedirect = sessionStorage.getItem('googleAuthPending') === 'true'
-    
-    // If we might be returning from a redirect, check for result first
-    const handleRedirect = async () => {
+    // Check for redirect result first, then set up listener
+    const init = async () => {
+      const isPendingRedirect = sessionStorage.getItem('googleAuthPending') === 'true'
+      
+      // Always check for redirect result first (handles return from Google sign-in)
       if (isPendingRedirect) {
         try {
-          await authService.checkRedirectResult()
+          const result = await authService.checkRedirectResult()
+          sessionStorage.removeItem('googleAuthPending')
+          
+          if (!result && !auth.currentUser) {
+            // No redirect result and no current user - mark as not authenticated
+            set({
+              user: null,
+              firebaseUser: null,
+              isAuthenticated: false,
+              isLoading: false,
+              isInitialized: true
+            })
+          }
+          // If result exists, onAuthStateChanged will fire with the user
         } catch (error) {
           console.error('Redirect check error:', error)
+          sessionStorage.removeItem('googleAuthPending')
+          // On error, let onAuthStateChanged handle the state
         }
       }
     }
     
-    // Start redirect check
-    handleRedirect()
+    // Start initialization
+    init()
     
     // Set up auth state listener
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Check if we're waiting for redirect
+      const stillPending = sessionStorage.getItem('googleAuthPending') === 'true'
+      
       if (firebaseUser) {
-        // Clear any pending redirect flag
+        // User is signed in
         sessionStorage.removeItem('googleAuthPending')
         
         try {
@@ -95,7 +114,6 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           })
         } catch (error) {
           console.error('Error fetching profile:', error)
-          // Even if profile fetch fails, user is still authenticated
           const user = createUserObject(firebaseUser, null)
           set({
             user,
@@ -105,20 +123,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             isInitialized: true
           })
         }
-      } else {
-        // If there's a pending redirect, don't mark as not authenticated yet
-        // Wait a bit for the redirect result to be processed
-        if (isPendingRedirect) {
-          // Give extra time for redirect to complete
-          await new Promise(resolve => setTimeout(resolve, 2000))
-          
-          // Re-check auth state
-          if (auth.currentUser) {
-            return // Auth state will update via another callback
-          }
-          sessionStorage.removeItem('googleAuthPending')
-        }
-        
+      } else if (!stillPending) {
+        // Only mark as not authenticated if we're not waiting for redirect
         set({
           user: null,
           firebaseUser: null,
@@ -127,6 +133,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isInitialized: true
         })
       }
+      // If stillPending is true and no user, keep loading state
     })
     
     return unsubscribe

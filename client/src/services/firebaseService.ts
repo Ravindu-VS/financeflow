@@ -27,6 +27,35 @@ import {
 } from 'firebase/auth'
 import { db, auth } from '../config/firebase'
 
+// ======= AUTH HELPER =======
+// Wait for auth to be ready (resolves with current user or null)
+function waitForAuth(): Promise<User | null> {
+  return new Promise((resolve) => {
+    const user = auth.currentUser
+    if (user) {
+      resolve(user)
+      return
+    }
+    // If no user yet, wait for auth state to initialize
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe()
+      resolve(user)
+    })
+    // Timeout after 5 seconds
+    setTimeout(() => {
+      unsubscribe()
+      resolve(auth.currentUser)
+    }, 5000)
+  })
+}
+
+// Get current user with auth ready check
+async function getCurrentUserAsync(): Promise<User> {
+  const user = await waitForAuth()
+  if (!user) throw new Error('Not authenticated')
+  return user
+}
+
 // ======= CACHING LAYER =======
 interface CacheEntry<T> {
   data: T
@@ -212,8 +241,7 @@ export const authService = {
 // Generic Firestore CRUD operations - clears cache on mutations
 const createCRUD = (collectionName: string) => ({
   async create(data: any) {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
+    const user = await getCurrentUserAsync()
 
     const docRef = await addDoc(collection(db, collectionName), {
       ...data,
@@ -226,8 +254,7 @@ const createCRUD = (collectionName: string) => ({
   },
 
   async getAll(filters?: QueryConstraint[]) {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
+    const user = await getCurrentUserAsync()
 
     const constraints: QueryConstraint[] = [
       where('userId', '==', user.uid),
@@ -249,21 +276,21 @@ const createCRUD = (collectionName: string) => ({
   },
 
   async update(id: string, data: any) {
-    const user = auth.currentUser
+    const user = await getCurrentUserAsync()
     const docRef = doc(db, collectionName, id)
     await updateDoc(docRef, {
       ...data,
       updatedAt: Timestamp.now()
     })
-    if (user) clearCache(`userData_${user.uid}`) // Clear cache after write
+    clearCache(`userData_${user.uid}`) // Clear cache after write
     return { id, ...data }
   },
 
   async delete(id: string) {
-    const user = auth.currentUser
+    const user = await getCurrentUserAsync()
     const docRef = doc(db, collectionName, id)
     await deleteDoc(docRef)
-    if (user) clearCache(`userData_${user.uid}`) // Clear cache after write
+    clearCache(`userData_${user.uid}`) // Clear cache after write
     return { id }
   }
 })
@@ -273,8 +300,7 @@ export const incomeService = {
   ...createCRUD('incomes'),
 
   async getByDateRange(startDate: Date, endDate: Date) {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
+    const user = await getCurrentUserAsync()
 
     const q = query(
       collection(db, 'incomes'),
@@ -288,8 +314,7 @@ export const incomeService = {
   },
 
   async getTotalByCategory() {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
+    const user = await getCurrentUserAsync()
 
     const q = query(collection(db, 'incomes'), where('userId', '==', user.uid))
     const snapshot = await getDocs(q)
@@ -308,8 +333,7 @@ export const expenseService = {
   ...createCRUD('expenses'),
 
   async getByDateRange(startDate: Date, endDate: Date) {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
+    const user = await getCurrentUserAsync()
 
     const q = query(
       collection(db, 'expenses'),
@@ -323,8 +347,7 @@ export const expenseService = {
   },
 
   async getTotalByCategory() {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
+    const user = await getCurrentUserAsync()
 
     const q = query(collection(db, 'expenses'), where('userId', '==', user.uid))
     const snapshot = await getDocs(q)
@@ -370,8 +393,7 @@ export const budgetService = {
   ...createCRUD('budgets'),
 
   async checkBudgetStatus() {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
+    const user = await getCurrentUserAsync()
 
     // Get all budgets
     const budgetQuery = query(collection(db, 'budgets'), where('userId', '==', user.uid))
@@ -411,8 +433,7 @@ export const budgetService = {
 export const analyticsService = {
   // Fetch all user data in one batch - reused across methods
   async _fetchAllUserData() {
-    const user = auth.currentUser
-    if (!user) throw new Error('Not authenticated')
+    const user = await getCurrentUserAsync()
     
     const cacheKey = `userData_${user.uid}`
     const cached = getCached<any>(cacheKey)

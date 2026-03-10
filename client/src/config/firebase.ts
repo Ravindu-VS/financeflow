@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, browserLocalPersistence, setPersistence, indexedDBLocalPersistence } from 'firebase/auth'
+import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore'
 
 const firebaseConfig = {
@@ -14,8 +14,11 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig)
 
-// Initialize Auth with persistence
-export const auth = getAuth(app)
+// Initialize Auth WITH persistence set at creation time (prevents race condition)
+// This ensures onAuthStateChanged fires with the correct persisted user on first call
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence]
+})
 
 // Initialize Firestore with persistent cache (modern API)
 export const db = initializeFirestore(app, {
@@ -23,21 +26,5 @@ export const db = initializeFirestore(app, {
     tabManager: persistentMultipleTabManager()
   })
 })
-
-// Set auth persistence - try IndexedDB first, fall back to localStorage
-const initPersistence = async () => {
-  try {
-    await setPersistence(auth, indexedDBLocalPersistence)
-    console.log('Auth persistence: IndexedDB')
-  } catch (e) {
-    try {
-      await setPersistence(auth, browserLocalPersistence)
-      console.log('Auth persistence: localStorage')
-    } catch (err) {
-      console.error('Auth persistence error:', err)
-    }
-  }
-}
-initPersistence()
 
 export default app

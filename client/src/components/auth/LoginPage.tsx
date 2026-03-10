@@ -32,16 +32,18 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true)
-      await loginWithGoogle()
-      // If we get here and authenticated, navigate (popup flow)
-      // If redirect was used, page will reload and auth state will handle it
-      if (isAuthenticated) {
+      const user = await loginWithGoogle()
+      // If popup flow worked and returned user, navigate
+      if (user) {
+        console.log('Google popup login success:', user.email)
         toast.success('Welcome!')
         navigate('/dashboard')
       }
+      // If no user returned, redirect flow was used - page will reload
+      // and auth state listener will handle navigation
     } catch (error: any) {
+      console.error('Google sign-in error:', error)
       toast.error(error.message || 'Google sign-in failed')
-    } finally {
       setIsGoogleLoading(false)
     }
   }

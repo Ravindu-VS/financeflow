@@ -14,7 +14,7 @@ interface AuthState {
   
   // Actions
   login: (email: string, password: string) => Promise<void>
-  loginWithGoogle: () => Promise<void>
+  loginWithGoogle: () => Promise<FirebaseUser | null>
   register: (data: RegisterData) => Promise<void>
   logout: () => Promise<void>
   initAuth: () => () => void
@@ -60,11 +60,14 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   // Initialize auth listener - call this once on app start
   initAuth: () => {
-    let hasInitialized = false
+    console.log('initAuth called, current user:', auth.currentUser?.email || 'none')
     
     const handleUser = async (firebaseUser: FirebaseUser | null) => {
+      console.log('handleUser called with:', firebaseUser?.email || 'null')
+      
       if (firebaseUser) {
         sessionStorage.removeItem('googleAuthPending')
+        console.log('User authenticated:', firebaseUser.email)
         
         try {
           const profileData = await authService.getUserProfile(firebaseUser.uid)
@@ -77,6 +80,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             isLoading: false,
             isInitialized: true
           })
+          console.log('Auth state set: authenticated')
         } catch (error) {
           console.error('Error fetching profile:', error)
           const user = createUserObject(firebaseUser, null)
@@ -89,6 +93,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           })
         }
       } else {
+        console.log('No user, setting unauthenticated state')
         set({
           user: null,
           firebaseUser: null,
@@ -99,30 +104,27 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       }
     }
     
+    // Check for redirect result first (before auth listener fires)
+    const checkRedirect = async () => {
+      console.log('Checking for redirect result...')
+      try {
+        const result = await authService.checkRedirectResult()
+        if (result) {
+          console.log('Got user from redirect:', result.email)
+        } else {
+          console.log('No redirect result')
+        }
+      } catch (error) {
+        console.error('Redirect check error:', error)
+      }
+    }
+    
+    // Start redirect check immediately
+    checkRedirect()
+    
     // Set up auth state listener
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      // First call - always check for redirect result before proceeding
-      if (!hasInitialized) {
-        hasInitialized = true
-        
-        // Always check for redirect result (handles return from Google sign-in)
-        // This is needed even without the pending flag in case sessionStorage was cleared
-        if (!firebaseUser) {
-          console.log('No user on init, checking redirect result...')
-          try {
-            const result = await authService.checkRedirectResult()
-            if (result) {
-              console.log('Got user from redirect:', result.email)
-              // User was found via redirect - onAuthStateChanged will fire again with the user
-              return
-            }
-          } catch (error) {
-            console.error('Redirect check error:', error)
-          }
-        }
-      }
-      
-      // Handle the current auth state
+      console.log('onAuthStateChanged fired:', firebaseUser?.email || 'null')
       await handleUser(firebaseUser)
     })
     
@@ -149,7 +151,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (!user) {
         set({ isLoading: false })
       }
-      // Otherwise, auth state listener will handle the rest
+      // Return user so caller knows popup worked
+      return user
     } catch (error: any) {
       const message = error.message || 'Google login failed'
       set({ isLoading: false, error: message })

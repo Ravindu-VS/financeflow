@@ -31,6 +31,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        navigateFallback: '/financeflow/index.html',
+        navigateFallbackDenylist: [/^\/financeflow\/__/],
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/api\./i,

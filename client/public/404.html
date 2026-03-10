@@ -4,19 +4,20 @@
     <meta charset="utf-8">
     <title>FinanceFlow</title>
     <script type="text/javascript">
-      // Single Page Apps for GitHub Pages
-      // MIT License
-      // https://github.com/rafgraph/spa-github-pages
-      var pathSegmentsToKeep = 1;
-
-      var l = window.location;
-      l.replace(
-        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
-        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
-        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
-        l.hash
-      );
+      // Single Page Apps for GitHub Pages - redirect to index with path encoded
+      (function() {
+        var repo = '/financeflow';
+        var loc = window.location;
+        var path = loc.pathname.replace(repo, '').replace(/^\/+/, '');
+        var search = loc.search ? '&' + loc.search.slice(1).replace(/&/g, '~and~') : '';
+        var hash = loc.hash || '';
+        
+        if (path) {
+          loc.replace(loc.protocol + '//' + loc.host + repo + '/?p=' + path.replace(/&/g, '~and~') + search + hash);
+        } else {
+          loc.replace(loc.protocol + '//' + loc.host + repo + '/');
+        }
+      })();
     </script>
   </head>
   <body>

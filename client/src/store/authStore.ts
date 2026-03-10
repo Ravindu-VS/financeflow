@@ -60,45 +60,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   // Initialize auth listener - call this once on app start
   initAuth: () => {
-    // Check for redirect result first, then set up listener
-    const init = async () => {
-      const isPendingRedirect = sessionStorage.getItem('googleAuthPending') === 'true'
-      
-      // Always check for redirect result first (handles return from Google sign-in)
-      if (isPendingRedirect) {
-        try {
-          const result = await authService.checkRedirectResult()
-          sessionStorage.removeItem('googleAuthPending')
-          
-          if (!result && !auth.currentUser) {
-            // No redirect result and no current user - mark as not authenticated
-            set({
-              user: null,
-              firebaseUser: null,
-              isAuthenticated: false,
-              isLoading: false,
-              isInitialized: true
-            })
-          }
-          // If result exists, onAuthStateChanged will fire with the user
-        } catch (error) {
-          console.error('Redirect check error:', error)
-          sessionStorage.removeItem('googleAuthPending')
-          // On error, let onAuthStateChanged handle the state
-        }
-      }
-    }
+    let hasInitialized = false
     
-    // Start initialization
-    init()
-    
-    // Set up auth state listener
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      // Check if we're waiting for redirect
-      const stillPending = sessionStorage.getItem('googleAuthPending') === 'true'
-      
+    const handleUser = async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        // User is signed in
         sessionStorage.removeItem('googleAuthPending')
         
         try {
@@ -123,8 +88,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             isInitialized: true
           })
         }
-      } else if (!stillPending) {
-        // Only mark as not authenticated if we're not waiting for redirect
+      } else {
         set({
           user: null,
           firebaseUser: null,
@@ -133,7 +97,33 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isInitialized: true
         })
       }
-      // If stillPending is true and no user, keep loading state
+    }
+    
+    // Set up auth state listener
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // First call - always check for redirect result before proceeding
+      if (!hasInitialized) {
+        hasInitialized = true
+        
+        // Always check for redirect result (handles return from Google sign-in)
+        // This is needed even without the pending flag in case sessionStorage was cleared
+        if (!firebaseUser) {
+          console.log('No user on init, checking redirect result...')
+          try {
+            const result = await authService.checkRedirectResult()
+            if (result) {
+              console.log('Got user from redirect:', result.email)
+              // User was found via redirect - onAuthStateChanged will fire again with the user
+              return
+            }
+          } catch (error) {
+            console.error('Redirect check error:', error)
+          }
+        }
+      }
+      
+      // Handle the current auth state
+      await handleUser(firebaseUser)
     })
     
     return unsubscribe

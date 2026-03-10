@@ -17,6 +17,7 @@ import {
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   GoogleAuthProvider,
@@ -138,27 +139,47 @@ export const authService = {
     return userCredential.user
   },
 
-  // Login with Google - use redirect flow (popup blocked by GitHub Pages COOP headers)
+  // Login with Google - try popup first, fallback to redirect
   async loginWithGoogle() {
-    // Store flag to show loading state while redirecting
-    sessionStorage.setItem('googleAuthPending', 'true')
-    await signInWithRedirect(auth, googleProvider)
-    return null // Will be handled on redirect return via checkRedirectResult
+    try {
+      // Try popup first (works on most browsers)
+      const result = await signInWithPopup(auth, googleProvider)
+      const user = result.user
+      await this._ensureUserProfile(user)
+      return user
+    } catch (error: any) {
+      console.log('Popup auth error:', error.code, error.message)
+      
+      // If popup blocked or COOP issue, fall back to redirect
+      if (error.code === 'auth/popup-blocked' || 
+          error.code === 'auth/popup-closed-by-user' ||
+          error.code === 'auth/cancelled-popup-request' ||
+          error.message?.includes('Cross-Origin-Opener-Policy')) {
+        console.log('Falling back to redirect auth...')
+        sessionStorage.setItem('googleAuthPending', 'true')
+        await signInWithRedirect(auth, googleProvider)
+        return null
+      }
+      throw error
+    }
   },
 
   // Check for redirect result (call on app init)
   async checkRedirectResult() {
     try {
+      console.log('Checking for redirect result...')
       const result = await getRedirectResult(auth)
       sessionStorage.removeItem('googleAuthPending')
       if (result?.user) {
+        console.log('Redirect auth successful:', result.user.email)
         await this._ensureUserProfile(result.user)
         return result.user
       }
+      console.log('No redirect result found')
       return null
-    } catch (error) {
+    } catch (error: any) {
       sessionStorage.removeItem('googleAuthPending')
-      console.error('Redirect result error:', error)
+      console.error('Redirect result error:', error.code, error.message)
       return null
     }
   },

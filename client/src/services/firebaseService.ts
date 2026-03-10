@@ -17,7 +17,6 @@ import {
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   GoogleAuthProvider,
@@ -110,33 +109,26 @@ export const authService = {
     return userCredential.user
   },
 
-  // Login with Google (try popup first, fallback to redirect)
+  // Login with Google - use redirect flow (popup blocked by GitHub Pages COOP headers)
   async loginWithGoogle() {
-    try {
-      const result = await signInWithPopup(auth, googleProvider)
-      const user = result.user
-      await this._ensureUserProfile(user)
-      return user
-    } catch (error: any) {
-      // If popup is blocked, try redirect
-      if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
-        await signInWithRedirect(auth, googleProvider)
-        return null // Will be handled on redirect return
-      }
-      throw error
-    }
+    // Store flag to show loading state while redirecting
+    sessionStorage.setItem('googleAuthPending', 'true')
+    await signInWithRedirect(auth, googleProvider)
+    return null // Will be handled on redirect return via checkRedirectResult
   },
 
   // Check for redirect result (call on app init)
   async checkRedirectResult() {
     try {
       const result = await getRedirectResult(auth)
+      sessionStorage.removeItem('googleAuthPending')
       if (result?.user) {
         await this._ensureUserProfile(result.user)
         return result.user
       }
       return null
     } catch (error) {
+      sessionStorage.removeItem('googleAuthPending')
       console.error('Redirect result error:', error)
       return null
     }

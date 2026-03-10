@@ -36,9 +36,10 @@ const PageLoader = () => (
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuthStore()
+  const { isAuthenticated, isLoading, isInitialized } = useAuthStore()
 
-  if (isLoading) {
+  // Wait for auth to be fully initialized
+  if (isLoading || !isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-500 border-t-transparent"></div>
@@ -55,9 +56,10 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Public Route (redirect to dashboard if authenticated)
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuthStore()
+  const { isAuthenticated, isLoading, isInitialized } = useAuthStore()
 
-  if (isLoading) {
+  // Wait for auth to be fully initialized
+  if (isLoading || !isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>

@@ -14,7 +14,7 @@ interface AuthState {
   
   // Actions
   login: (email: string, password: string) => Promise<void>
-  loginWithGoogle: () => Promise<void>
+  loginWithGoogle: (accessToken: string) => Promise<void>
   register: (data: RegisterData) => Promise<void>
   logout: () => Promise<void>
   initAuth: () => () => void
@@ -110,11 +110,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }
   },
 
-  loginWithGoogle: async () => {
+  loginWithGoogle: async (accessToken: string) => {
     set({ isLoading: true, error: null })
     try {
-      await authService.loginWithGoogle()
-      // Auth state listener will handle state update
+      await authService.loginWithGoogleToken(accessToken)
+      // onAuthStateChanged will handle state update
     } catch (error: any) {
       const message = error.message || 'Google login failed'
       set({ isLoading: false, error: message })

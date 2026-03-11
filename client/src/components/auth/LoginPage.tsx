@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
+import { GOOGLE_CLIENT_ID } from '../../config/firebase'
 import { Button, Input } from '../ui'
 import { EyeIcon, EyeSlashIcon, EnvelopeIcon, LockClosedIcon } from '@heroicons/react/24/outline'
 
@@ -29,18 +30,41 @@ export default function LoginPage() {
     }
   }
 
-  const handleGoogleSignIn = async () => {
-    try {
-      setIsGoogleLoading(true)
-      await loginWithGoogle()
-      // Popup succeeded, auth state listener updates store,
-      // PublicRoute will redirect to dashboard automatically
-    } catch (error: any) {
-      console.error('Google sign-in error:', error)
-      toast.error(error.message || 'Google sign-in failed')
-    } finally {
-      setIsGoogleLoading(false)
+  const handleGoogleSignIn = () => {
+    const goog = (window as any).google
+    if (!goog?.accounts?.oauth2) {
+      toast.error('Google Sign-In is loading, please try again')
+      return
     }
+    if (!GOOGLE_CLIENT_ID) {
+      toast.error('Google Client ID not configured')
+      return
+    }
+
+    setIsGoogleLoading(true)
+
+    const tokenClient = goog.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'openid email profile',
+      callback: async (response: any) => {
+        try {
+          if (response.error) {
+            throw new Error(response.error_description || response.error)
+          }
+          await loginWithGoogle(response.access_token)
+          toast.success('Welcome!')
+        } catch (error: any) {
+          toast.error(error.message || 'Google sign-in failed')
+        } finally {
+          setIsGoogleLoading(false)
+        }
+      },
+      error_callback: () => {
+        setIsGoogleLoading(false)
+      }
+    })
+
+    tokenClient.requestAccessToken()
   }
 
   return (

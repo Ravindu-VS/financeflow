@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
-import { authService } from '../../services/firebaseService'
+import { GOOGLE_CLIENT_ID } from '../../config/firebase'
 import { Button, Input } from '../ui'
 import { EyeIcon, EyeSlashIcon, EnvelopeIcon, LockClosedIcon, UserIcon } from '@heroicons/react/24/outline'
 
@@ -19,7 +19,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const navigate = useNavigate()
-  const { register: registerUser } = useAuthStore()
+  const { register: registerUser, loginWithGoogle } = useAuthStore()
 
   const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<RegisterFormData>()
   const password = watch('password')
@@ -38,17 +38,41 @@ export default function RegisterPage() {
       toast.error(error.response?.data?.message || 'Failed to create account')
     }
   }
-  const handleGoogleSignIn = async () => {
-    setIsGoogleLoading(true)
-    try {
-      await authService.loginWithGoogle()
-      toast.success('Account created successfully!')
-      navigate('/dashboard')
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to sign up with Google')
-    } finally {
-      setIsGoogleLoading(false)
+  const handleGoogleSignIn = () => {
+    const goog = (window as any).google
+    if (!goog?.accounts?.oauth2) {
+      toast.error('Google Sign-In is loading, please try again')
+      return
     }
+    if (!GOOGLE_CLIENT_ID) {
+      toast.error('Google Client ID not configured')
+      return
+    }
+
+    setIsGoogleLoading(true)
+
+    const tokenClient = goog.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'openid email profile',
+      callback: async (response: any) => {
+        try {
+          if (response.error) {
+            throw new Error(response.error_description || response.error)
+          }
+          await loginWithGoogle(response.access_token)
+          toast.success('Account created successfully!')
+        } catch (error: any) {
+          toast.error(error.message || 'Failed to sign up with Google')
+        } finally {
+          setIsGoogleLoading(false)
+        }
+      },
+      error_callback: () => {
+        setIsGoogleLoading(false)
+      }
+    })
+
+    tokenClient.requestAccessToken()
   }
   return (
     <div className="w-full max-w-md mx-auto">

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence } from 'firebase/auth'
+import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserPopupRedirectResolver } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore'
 
 const firebaseConfig = {
@@ -17,7 +17,8 @@ const app = initializeApp(firebaseConfig)
 // Initialize Auth WITH persistence set at creation time (prevents race condition)
 // This ensures onAuthStateChanged fires with the correct persisted user on first call
 export const auth = initializeAuth(app, {
-  persistence: [indexedDBLocalPersistence, browserLocalPersistence]
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+  popupRedirectResolver: browserPopupRedirectResolver
 })
 
 // Initialize Firestore with persistent cache (modern API)

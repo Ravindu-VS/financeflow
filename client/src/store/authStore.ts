@@ -14,7 +14,7 @@ interface AuthState {
   
   // Actions
   login: (email: string, password: string) => Promise<void>
-  loginWithGoogle: () => Promise<FirebaseUser | null>
+  loginWithGoogle: () => Promise<void>
   register: (data: RegisterData) => Promise<void>
   logout: () => Promise<void>
   initAuth: () => () => void
@@ -60,49 +60,69 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   // Initialize auth listener - call this once on app start
   initAuth: () => {
-    // Check for redirect result (handles return from Google sign-in redirect)
-    authService.checkRedirectResult().catch(console.error)
-    
-    // Set up auth state listener - Firebase guarantees the first callback
-    // has the resolved persisted state (not a loading state)
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        sessionStorage.removeItem('googleAuthPending')
-        
-        try {
-          const profileData = await authService.getUserProfile(firebaseUser.uid)
-          const user = createUserObject(firebaseUser, profileData)
-          
+    let unsubscribe: (() => void) | null = null
+    let disposed = false
+
+    const init = async () => {
+      // FIRST: process any pending redirect result
+      // This must complete BEFORE we listen for auth state,
+      // otherwise onAuthStateChanged fires with null prematurely
+      try {
+        await authService.checkRedirectResult()
+      } catch (e) {
+        console.error('Redirect check failed:', e)
+      }
+
+      if (disposed) return
+
+      // NOW set up auth state listener - at this point any redirect
+      // has been processed, so the first callback has the real state
+      unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (disposed) return
+
+        if (firebaseUser) {
+          sessionStorage.removeItem('googleAuthPending')
+
+          try {
+            const profileData = await authService.getUserProfile(firebaseUser.uid)
+            const user = createUserObject(firebaseUser, profileData)
+
+            set({
+              user,
+              firebaseUser,
+              isAuthenticated: true,
+              isLoading: false,
+              isInitialized: true
+            })
+          } catch (error) {
+            console.error('Error fetching profile:', error)
+            const user = createUserObject(firebaseUser, null)
+            set({
+              user,
+              firebaseUser,
+              isAuthenticated: true,
+              isLoading: false,
+              isInitialized: true
+            })
+          }
+        } else {
           set({
-            user,
-            firebaseUser,
-            isAuthenticated: true,
-            isLoading: false,
-            isInitialized: true
-          })
-        } catch (error) {
-          console.error('Error fetching profile:', error)
-          const user = createUserObject(firebaseUser, null)
-          set({
-            user,
-            firebaseUser,
-            isAuthenticated: true,
+            user: null,
+            firebaseUser: null,
+            isAuthenticated: false,
             isLoading: false,
             isInitialized: true
           })
         }
-      } else {
-        set({
-          user: null,
-          firebaseUser: null,
-          isAuthenticated: false,
-          isLoading: false,
-          isInitialized: true
-        })
-      }
-    })
-    
-    return unsubscribe
+      })
+    }
+
+    init()
+
+    return () => {
+      disposed = true
+      if (unsubscribe) unsubscribe()
+    }
   },
 
   login: async (email: string, password: string) => {
@@ -120,13 +140,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   loginWithGoogle: async () => {
     set({ isLoading: true, error: null })
     try {
-      const user = await authService.loginWithGoogle()
-      // If null, redirect happened - auth state listener will handle on return
-      if (!user) {
-        set({ isLoading: false })
-      }
-      // Return user so caller knows popup worked
-      return user
+      await authService.loginWithGoogle()
+      // Redirect will navigate away from the page
+      // Auth state listener handles sign-in on return
     } catch (error: any) {
       const message = error.message || 'Google login failed'
       set({ isLoading: false, error: message })

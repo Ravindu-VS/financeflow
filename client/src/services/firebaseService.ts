@@ -17,7 +17,6 @@ import {
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   GoogleAuthProvider,
@@ -139,29 +138,12 @@ export const authService = {
     return userCredential.user
   },
 
-  // Login with Google - try popup first, fallback to redirect
+  // Login with Google - redirect only (popup fails on GitHub Pages due to COOP)
   async loginWithGoogle() {
-    try {
-      // Try popup first (works on most browsers)
-      const result = await signInWithPopup(auth, googleProvider)
-      const user = result.user
-      await this._ensureUserProfile(user)
-      return user
-    } catch (error: any) {
-      console.log('Popup auth error:', error.code, error.message)
-      
-      // If popup blocked or COOP issue, fall back to redirect
-      if (error.code === 'auth/popup-blocked' || 
-          error.code === 'auth/popup-closed-by-user' ||
-          error.code === 'auth/cancelled-popup-request' ||
-          error.message?.includes('Cross-Origin-Opener-Policy')) {
-        console.log('Falling back to redirect auth...')
-        sessionStorage.setItem('googleAuthPending', 'true')
-        await signInWithRedirect(auth, googleProvider)
-        return null
-      }
-      throw error
-    }
+    sessionStorage.setItem('googleAuthPending', 'true')
+    await signInWithRedirect(auth, googleProvider)
+    // Page will navigate away to Google, then return
+    return null
   },
 
   // Check for redirect result (call on app init)

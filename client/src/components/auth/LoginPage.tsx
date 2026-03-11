@@ -34,6 +34,7 @@ export default function LoginPage() {
     try {
       await loginWithGoogle()
       toast.success('Welcome!')
+      navigate('/dashboard')
     } catch (error: any) {
       toast.error(error.message || 'Google sign-in failed')
     } finally {

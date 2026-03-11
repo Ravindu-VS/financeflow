@@ -33,11 +33,12 @@ export default function LoginPage() {
     try {
       setIsGoogleLoading(true)
       await loginWithGoogle()
-      // Redirect flow - page navigates to Google
-      // On return, auth state listener handles navigation
+      // Popup succeeded, auth state listener updates store,
+      // PublicRoute will redirect to dashboard automatically
     } catch (error: any) {
       console.error('Google sign-in error:', error)
       toast.error(error.message || 'Google sign-in failed')
+    } finally {
       setIsGoogleLoading(false)
     }
   }

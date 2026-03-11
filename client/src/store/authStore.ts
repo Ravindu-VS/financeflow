@@ -60,69 +60,42 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   // Initialize auth listener - call this once on app start
   initAuth: () => {
-    let unsubscribe: (() => void) | null = null
-    let disposed = false
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const profileData = await authService.getUserProfile(firebaseUser.uid)
+          const user = createUserObject(firebaseUser, profileData)
 
-    const init = async () => {
-      // FIRST: process any pending redirect result
-      // This must complete BEFORE we listen for auth state,
-      // otherwise onAuthStateChanged fires with null prematurely
-      try {
-        await authService.checkRedirectResult()
-      } catch (e) {
-        console.error('Redirect check failed:', e)
-      }
-
-      if (disposed) return
-
-      // NOW set up auth state listener - at this point any redirect
-      // has been processed, so the first callback has the real state
-      unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        if (disposed) return
-
-        if (firebaseUser) {
-          sessionStorage.removeItem('googleAuthPending')
-
-          try {
-            const profileData = await authService.getUserProfile(firebaseUser.uid)
-            const user = createUserObject(firebaseUser, profileData)
-
-            set({
-              user,
-              firebaseUser,
-              isAuthenticated: true,
-              isLoading: false,
-              isInitialized: true
-            })
-          } catch (error) {
-            console.error('Error fetching profile:', error)
-            const user = createUserObject(firebaseUser, null)
-            set({
-              user,
-              firebaseUser,
-              isAuthenticated: true,
-              isLoading: false,
-              isInitialized: true
-            })
-          }
-        } else {
           set({
-            user: null,
-            firebaseUser: null,
-            isAuthenticated: false,
+            user,
+            firebaseUser,
+            isAuthenticated: true,
+            isLoading: false,
+            isInitialized: true
+          })
+        } catch (error) {
+          console.error('Error fetching profile:', error)
+          const user = createUserObject(firebaseUser, null)
+          set({
+            user,
+            firebaseUser,
+            isAuthenticated: true,
             isLoading: false,
             isInitialized: true
           })
         }
-      })
-    }
+      } else {
+        set({
+          user: null,
+          firebaseUser: null,
+          isAuthenticated: false,
+          isLoading: false,
+          isInitialized: true
+        })
+      }
+    })
 
-    init()
-
-    return () => {
-      disposed = true
-      if (unsubscribe) unsubscribe()
-    }
+    return unsubscribe
   },
 
   login: async (email: string, password: string) => {
@@ -141,8 +114,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       await authService.loginWithGoogle()
-      // Redirect will navigate away from the page
-      // Auth state listener handles sign-in on return
+      // Auth state listener will handle state update
     } catch (error: any) {
       const message = error.message || 'Google login failed'
       set({ isLoading: false, error: message })

@@ -17,8 +17,7 @@ import {
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
@@ -138,32 +137,11 @@ export const authService = {
     return userCredential.user
   },
 
-  // Login with Google - redirect only (popup fails on GitHub Pages due to COOP)
+  // Login with Google via popup
   async loginWithGoogle() {
-    sessionStorage.setItem('googleAuthPending', 'true')
-    await signInWithRedirect(auth, googleProvider)
-    // Page will navigate away to Google, then return
-    return null
-  },
-
-  // Check for redirect result (call on app init)
-  async checkRedirectResult() {
-    try {
-      console.log('Checking for redirect result...')
-      const result = await getRedirectResult(auth)
-      sessionStorage.removeItem('googleAuthPending')
-      if (result?.user) {
-        console.log('Redirect auth successful:', result.user.email)
-        await this._ensureUserProfile(result.user)
-        return result.user
-      }
-      console.log('No redirect result found')
-      return null
-    } catch (error: any) {
-      sessionStorage.removeItem('googleAuthPending')
-      console.error('Redirect result error:', error.code, error.message)
-      return null
-    }
+    const result = await signInWithPopup(auth, googleProvider)
+    await this._ensureUserProfile(result.user)
+    return result.user
   },
 
   // Helper to create user profile if needed

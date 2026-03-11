@@ -17,7 +17,7 @@ import {
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithCredential,
+  signInWithPopup,
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
@@ -137,10 +137,9 @@ export const authService = {
     return userCredential.user
   },
 
-  // Login with Google using ID token from Google Identity Services
-  async loginWithGoogleToken(idToken: string) {
-    const credential = GoogleAuthProvider.credential(idToken)
-    const result = await signInWithCredential(auth, credential)
+  // Login with Google via popup
+  async loginWithGoogle() {
+    const result = await signInWithPopup(auth, googleProvider)
     await this._ensureUserProfile(result.user)
     return result.user
   },

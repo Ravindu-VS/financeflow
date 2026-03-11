@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
-import { GOOGLE_CLIENT_ID } from '../../config/firebase'
 import { Button, Input } from '../ui'
 import { EyeIcon, EyeSlashIcon, EnvelopeIcon, LockClosedIcon, UserIcon } from '@heroicons/react/24/outline'
 
@@ -38,42 +37,17 @@ export default function RegisterPage() {
       toast.error(error.response?.data?.message || 'Failed to create account')
     }
   }
-  const handleGoogleSignIn = () => {
-    const goog = (window as any).google
-    if (!goog?.accounts?.id) {
-      toast.error('Google Sign-In is loading, please try again')
-      return
-    }
-    if (!GOOGLE_CLIENT_ID) {
-      toast.error('Google Client ID not configured')
-      return
-    }
-
+  const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true)
-
-    goog.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: async (response: any) => {
-        try {
-          if (!response.credential) {
-            throw new Error('No credential received from Google')
-          }
-          await loginWithGoogle(response.credential)
-          toast.success('Account created successfully!')
-        } catch (error: any) {
-          toast.error(error.message || 'Failed to sign up with Google')
-        } finally {
-          setIsGoogleLoading(false)
-        }
-      }
-    })
-
-    goog.accounts.id.prompt((notification: any) => {
-      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        setIsGoogleLoading(false)
-        toast.error('Google Sign-In unavailable. Try another browser or disable popup blocker.')
-      }
-    })
+    try {
+      await loginWithGoogle()
+      toast.success('Account created successfully!')
+      navigate('/dashboard')
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to sign up with Google')
+    } finally {
+      setIsGoogleLoading(false)
+    }
   }
   return (
     <div className="w-full max-w-md mx-auto">

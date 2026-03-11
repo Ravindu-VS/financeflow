@@ -40,7 +40,7 @@ export default function RegisterPage() {
   }
   const handleGoogleSignIn = () => {
     const goog = (window as any).google
-    if (!goog?.accounts?.oauth2) {
+    if (!goog?.accounts?.id) {
       toast.error('Google Sign-In is loading, please try again')
       return
     }
@@ -51,28 +51,29 @@ export default function RegisterPage() {
 
     setIsGoogleLoading(true)
 
-    const tokenClient = goog.accounts.oauth2.initTokenClient({
+    goog.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
-      scope: 'openid email profile',
       callback: async (response: any) => {
         try {
-          if (response.error) {
-            throw new Error(response.error_description || response.error)
+          if (!response.credential) {
+            throw new Error('No credential received from Google')
           }
-          await loginWithGoogle(response.access_token)
+          await loginWithGoogle(response.credential)
           toast.success('Account created successfully!')
         } catch (error: any) {
           toast.error(error.message || 'Failed to sign up with Google')
         } finally {
           setIsGoogleLoading(false)
         }
-      },
-      error_callback: () => {
-        setIsGoogleLoading(false)
       }
     })
 
-    tokenClient.requestAccessToken()
+    goog.accounts.id.prompt((notification: any) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        setIsGoogleLoading(false)
+        toast.error('Google Sign-In unavailable. Try another browser or disable popup blocker.')
+      }
+    })
   }
   return (
     <div className="w-full max-w-md mx-auto">

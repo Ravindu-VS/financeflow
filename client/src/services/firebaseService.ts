@@ -137,9 +137,9 @@ export const authService = {
     return userCredential.user
   },
 
-  // Login with Google using access token from Google Identity Services
-  async loginWithGoogleToken(accessToken: string) {
-    const credential = GoogleAuthProvider.credential(null, accessToken)
+  // Login with Google using ID token from Google Identity Services
+  async loginWithGoogleToken(idToken: string) {
+    const credential = GoogleAuthProvider.credential(idToken)
     const result = await signInWithCredential(auth, credential)
     await this._ensureUserProfile(result.user)
     return result.user

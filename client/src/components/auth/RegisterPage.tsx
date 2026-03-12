@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
@@ -17,7 +17,6 @@ interface RegisterFormData {
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
-  const navigate = useNavigate()
   const { register: registerUser, loginWithGoogle } = useAuthStore()
 
   const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<RegisterFormData>()
@@ -32,7 +31,6 @@ export default function RegisterPage() {
         lastName: data.lastName
       })
       toast.success('Account created successfully!')
-      navigate('/dashboard')
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to create account')
     }
@@ -42,7 +40,6 @@ export default function RegisterPage() {
     try {
       await loginWithGoogle()
       toast.success('Account created successfully!')
-      navigate('/dashboard')
     } catch (error: any) {
       toast.error(error.message || 'Failed to sign up with Google')
     } finally {

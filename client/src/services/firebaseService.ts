@@ -40,11 +40,11 @@ function waitForAuth(): Promise<User | null> {
       unsubscribe()
       resolve(user)
     })
-    // Timeout after 5 seconds
+    // Timeout after 2 seconds
     setTimeout(() => {
       unsubscribe()
       resolve(auth.currentUser)
-    }, 5000)
+    }, 2000)
   })
 }
 
@@ -140,7 +140,6 @@ export const authService = {
   // Login with Google via popup
   async loginWithGoogle() {
     const result = await signInWithPopup(auth, googleProvider)
-    await this._ensureUserProfile(result.user)
     return result.user
   },
 

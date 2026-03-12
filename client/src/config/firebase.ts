@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserPopupRedirectResolver } from 'firebase/auth'
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore'
+import { getFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: "AIzaSyA0uQFX5CE0JPGxBoA3NUeCw4QOCCe4fjo",
@@ -19,11 +19,6 @@ export const auth = initializeAuth(app, {
   popupRedirectResolver: browserPopupRedirectResolver
 })
 
-// Initialize Firestore with persistent cache (modern API)
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-})
+export const db = getFirestore(app)
 
 export default app

@@ -62,27 +62,24 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   initAuth: () => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        try {
-          const profileData = await authService.getUserProfile(firebaseUser.uid)
-          const user = createUserObject(firebaseUser, profileData)
+        // Set authenticated immediately with basic info — no waiting for Firestore
+        set({
+          user: createUserObject(firebaseUser, null),
+          firebaseUser,
+          isAuthenticated: true,
+          isLoading: false,
+          isInitialized: true
+        })
 
-          set({
-            user,
-            firebaseUser,
-            isAuthenticated: true,
-            isLoading: false,
-            isInitialized: true
-          })
+        // Load full profile in background
+        try {
+          await authService._ensureUserProfile(firebaseUser)
+          const profileData = await authService.getUserProfile(firebaseUser.uid)
+          if (profileData) {
+            set({ user: createUserObject(firebaseUser, profileData) })
+          }
         } catch (error) {
-          console.error('Error fetching profile:', error)
-          const user = createUserObject(firebaseUser, null)
-          set({
-            user,
-            firebaseUser,
-            isAuthenticated: true,
-            isLoading: false,
-            isInitialized: true
-          })
+          console.error('Error loading profile:', error)
         }
       } else {
         set({
@@ -99,31 +96,31 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   login: async (email: string, password: string) => {
-    set({ isLoading: true, error: null })
+    set({ error: null })
     try {
       await authService.login(email, password)
-      // Auth state listener will handle the rest
+      // onAuthStateChanged will set isAuthenticated immediately
     } catch (error: any) {
       const message = error.message || 'Login failed'
-      set({ isLoading: false, error: message })
+      set({ error: message })
       throw new Error(message)
     }
   },
 
   loginWithGoogle: async () => {
-    set({ isLoading: true, error: null })
+    set({ error: null })
     try {
       await authService.loginWithGoogle()
-      // onAuthStateChanged will handle state update
+      // onAuthStateChanged will set isAuthenticated immediately
     } catch (error: any) {
       const message = error.message || 'Google login failed'
-      set({ isLoading: false, error: message })
+      set({ error: message })
       throw new Error(message)
     }
   },
 
   register: async (data: RegisterData) => {
-    set({ isLoading: true, error: null })
+    set({ error: null })
     try {
       await authService.register(
         data.email,
@@ -131,10 +128,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         data.firstName,
         data.lastName || ''
       )
-      // Auth state listener will handle the rest
+      // onAuthStateChanged will set isAuthenticated immediately
     } catch (error: any) {
       const message = error.message || 'Registration failed'
-      set({ isLoading: false, error: message })
+      set({ error: message })
       throw new Error(message)
     }
   },

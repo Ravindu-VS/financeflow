@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { StatCard, Card, SectionHeader } from '../ui'
 import { formatCurrency, formatAxisCurrency } from '../../utils/currency'
@@ -176,7 +177,7 @@ export default function Dashboard() {
         <Card className="lg:col-span-2">
           <SectionHeader 
             title="Recent Transactions" 
-            action={<a href="/expenses" className="text-sm text-primary-500 hover:text-primary-600">View all</a>}
+            action={<Link to="/expenses" className="text-sm text-primary-500 hover:text-primary-600">View all</Link>}
           />
           {recentTransactions.length > 0 ? (
           <div className="overflow-x-auto">
@@ -230,9 +231,9 @@ export default function Dashboard() {
               <p>No transactions yet</p>
               <p className="text-sm mt-1">Add your first income or expense to get started</p>
               <div className="flex gap-2 justify-center mt-4">
-                <a href="/income" className="text-primary-500 hover:text-primary-600 text-sm">Add Income</a>
+                <Link to="/income" className="text-primary-500 hover:text-primary-600 text-sm">Add Income</Link>
                 <span className="text-gray-400">|</span>
-                <a href="/expenses" className="text-primary-500 hover:text-primary-600 text-sm">Add Expense</a>
+                <Link to="/expenses" className="text-primary-500 hover:text-primary-600 text-sm">Add Expense</Link>
               </div>
             </div>
           )}
@@ -262,9 +263,9 @@ export default function Dashboard() {
               <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                 <WalletIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
                 <p>No savings goals yet</p>
-                <a href="/savings" className="text-primary-500 hover:text-primary-600 text-sm">
+                <Link to="/savings" className="text-primary-500 hover:text-primary-600 text-sm">
                   Create your first goal
-                </a>
+                </Link>
               </div>
             )}
           </div>

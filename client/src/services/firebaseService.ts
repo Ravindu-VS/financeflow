@@ -4,6 +4,7 @@ import {
   addDoc,
   getDoc,
   getDocs,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -104,9 +105,8 @@ export const authService = {
       displayName: `${firstName} ${lastName}`
     })
 
-    // Create user profile in Firestore
-    await addDoc(collection(db, 'users'), {
-      uid: user.uid,
+    // Create user profile in Firestore using UID as document ID
+    await setDoc(doc(db, 'users', user.uid), {
       email: user.email,
       profile: {
         firstName,
@@ -117,7 +117,7 @@ export const authService = {
         monthlyIncome: 0
       },
       preferences: {
-        currency: 'INR',
+        currency: 'LKR',
         language: 'en',
         dateFormat: 'DD/MM/YYYY',
         emailNotifications: true,
@@ -148,8 +148,7 @@ export const authService = {
     const existingProfile = await this.getUserProfile(user.uid)
     if (!existingProfile) {
       const nameParts = user.displayName?.split(' ') || ['User']
-      await addDoc(collection(db, 'users'), {
-        uid: user.uid,
+      await setDoc(doc(db, 'users', user.uid), {
         email: user.email,
         profile: {
           firstName: nameParts[0] || '',
@@ -195,59 +194,57 @@ export const authService = {
     profile?: { firstName?: string; lastName?: string }
     preferences?: { currency?: string; language?: string; theme?: string }
   } | null> {
-    const q = query(collection(db, 'users'), where('uid', '==', uid))
-    const snapshot = await getDocs(q)
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0]
-      return { id: doc.id, ...doc.data() } as any
+    const docRef = doc(db, 'users', uid)
+    const snapshot = await getDoc(docRef)
+    if (snapshot.exists()) {
+      return { id: snapshot.id, ...snapshot.data() } as any
     }
     return null
   },
 
   // Update user profile
   async updateUserProfile(uid: string, data: any) {
-    const q = query(collection(db, 'users'), where('uid', '==', uid))
-    const snapshot = await getDocs(q)
-    if (!snapshot.empty) {
-      const docRef = doc(db, 'users', snapshot.docs[0].id)
-      await updateDoc(docRef, {
-        ...data,
-        updatedAt: Timestamp.now()
-      })
-    }
+    const docRef = doc(db, 'users', uid)
+    await updateDoc(docRef, {
+      ...data,
+      updatedAt: Timestamp.now()
+    })
   }
 }
 
-// Generic Firestore CRUD operations - clears cache on mutations
+// Helper to get user subcollection reference: users/{userId}/{collectionName}
+function userCollection(userId: string, collectionName: string) {
+  return collection(db, 'users', userId, collectionName)
+}
+
+// Generic Firestore CRUD operations using user subcollections
 const createCRUD = (collectionName: string) => ({
   async create(data: any) {
     const user = await getCurrentUserAsync()
+    const colRef = userCollection(user.uid, collectionName)
 
-    const docRef = await addDoc(collection(db, collectionName), {
+    const docRef = await addDoc(colRef, {
       ...data,
-      userId: user.uid,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now()
     })
-    clearCache(`userData_${user.uid}`) // Clear cache after write
+    clearCache(`userData_${user.uid}`)
     return { id: docRef.id, ...data }
   },
 
   async getAll(filters?: QueryConstraint[]) {
     const user = await getCurrentUserAsync()
+    const colRef = userCollection(user.uid, collectionName)
 
-    const constraints: QueryConstraint[] = [
-      where('userId', '==', user.uid),
-      ...(filters || [])
-    ]
-
-    const q = query(collection(db, collectionName), ...constraints)
+    const constraints: QueryConstraint[] = [...(filters || [])]
+    const q = constraints.length > 0 ? query(colRef, ...constraints) : query(colRef)
     const snapshot = await getDocs(q)
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
   },
 
   async getById(id: string) {
-    const docRef = doc(db, collectionName, id)
+    const user = await getCurrentUserAsync()
+    const docRef = doc(db, 'users', user.uid, collectionName, id)
     const snapshot = await getDoc(docRef)
     if (snapshot.exists()) {
       return { id: snapshot.id, ...snapshot.data() }
@@ -257,20 +254,20 @@ const createCRUD = (collectionName: string) => ({
 
   async update(id: string, data: any) {
     const user = await getCurrentUserAsync()
-    const docRef = doc(db, collectionName, id)
+    const docRef = doc(db, 'users', user.uid, collectionName, id)
     await updateDoc(docRef, {
       ...data,
       updatedAt: Timestamp.now()
     })
-    clearCache(`userData_${user.uid}`) // Clear cache after write
+    clearCache(`userData_${user.uid}`)
     return { id, ...data }
   },
 
   async delete(id: string) {
     const user = await getCurrentUserAsync()
-    const docRef = doc(db, collectionName, id)
+    const docRef = doc(db, 'users', user.uid, collectionName, id)
     await deleteDoc(docRef)
-    clearCache(`userData_${user.uid}`) // Clear cache after write
+    clearCache(`userData_${user.uid}`)
     return { id }
   }
 })
@@ -281,10 +278,10 @@ export const incomeService = {
 
   async getByDateRange(startDate: Date, endDate: Date) {
     const user = await getCurrentUserAsync()
+    const colRef = userCollection(user.uid, 'incomes')
 
     const q = query(
-      collection(db, 'incomes'),
-      where('userId', '==', user.uid),
+      colRef,
       where('date', '>=', Timestamp.fromDate(startDate)),
       where('date', '<=', Timestamp.fromDate(endDate)),
       orderBy('date', 'desc')
@@ -295,9 +292,9 @@ export const incomeService = {
 
   async getTotalByCategory() {
     const user = await getCurrentUserAsync()
+    const colRef = userCollection(user.uid, 'incomes')
 
-    const q = query(collection(db, 'incomes'), where('userId', '==', user.uid))
-    const snapshot = await getDocs(q)
+    const snapshot = await getDocs(query(colRef))
     const incomes = snapshot.docs.map(doc => doc.data())
 
     const totals: Record<string, number> = {}
@@ -314,10 +311,10 @@ export const expenseService = {
 
   async getByDateRange(startDate: Date, endDate: Date) {
     const user = await getCurrentUserAsync()
+    const colRef = userCollection(user.uid, 'expenses')
 
     const q = query(
-      collection(db, 'expenses'),
-      where('userId', '==', user.uid),
+      colRef,
       where('date', '>=', Timestamp.fromDate(startDate)),
       where('date', '<=', Timestamp.fromDate(endDate)),
       orderBy('date', 'desc')
@@ -328,9 +325,9 @@ export const expenseService = {
 
   async getTotalByCategory() {
     const user = await getCurrentUserAsync()
+    const colRef = userCollection(user.uid, 'expenses')
 
-    const q = query(collection(db, 'expenses'), where('userId', '==', user.uid))
-    const snapshot = await getDocs(q)
+    const snapshot = await getDocs(query(colRef))
     const expenses = snapshot.docs.map(doc => doc.data())
 
     const totals: Record<string, number> = {}
@@ -346,7 +343,8 @@ export const savingsService = {
   ...createCRUD('savingsGoals'),
 
   async addContribution(goalId: string, amount: number, notes?: string) {
-    const docRef = doc(db, 'savingsGoals', goalId)
+    const user = await getCurrentUserAsync()
+    const docRef = doc(db, 'users', user.uid, 'savingsGoals', goalId)
     const snapshot = await getDoc(docRef)
     
     if (snapshot.exists()) {
@@ -374,10 +372,11 @@ export const budgetService = {
 
   async checkBudgetStatus() {
     const user = await getCurrentUserAsync()
+    const budgetCol = userCollection(user.uid, 'budgets')
+    const expenseCol = userCollection(user.uid, 'expenses')
 
     // Get all budgets
-    const budgetQuery = query(collection(db, 'budgets'), where('userId', '==', user.uid))
-    const budgetSnapshot = await getDocs(budgetQuery)
+    const budgetSnapshot = await getDocs(query(budgetCol))
     const budgets = budgetSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
     // Get current month expenses
@@ -386,8 +385,7 @@ export const budgetService = {
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
     const expenseQuery = query(
-      collection(db, 'expenses'),
-      where('userId', '==', user.uid),
+      expenseCol,
       where('date', '>=', Timestamp.fromDate(startOfMonth)),
       where('date', '<=', Timestamp.fromDate(endOfMonth))
     )
@@ -419,12 +417,12 @@ export const analyticsService = {
     const cached = getCached<any>(cacheKey)
     if (cached) return cached
 
-    // Run ALL queries in parallel
+    // Run ALL queries in parallel using subcollections
     const [incomeSnapshot, expenseSnapshot, investmentSnapshot, savingsSnapshot] = await Promise.all([
-      getDocs(query(collection(db, 'incomes'), where('userId', '==', user.uid), limit(500))),
-      getDocs(query(collection(db, 'expenses'), where('userId', '==', user.uid), limit(500))),
-      getDocs(query(collection(db, 'investments'), where('userId', '==', user.uid), limit(100))),
-      getDocs(query(collection(db, 'savingsGoals'), where('userId', '==', user.uid), limit(50)))
+      getDocs(query(userCollection(user.uid, 'incomes'), limit(500))),
+      getDocs(query(userCollection(user.uid, 'expenses'), limit(500))),
+      getDocs(query(userCollection(user.uid, 'investments'), limit(100))),
+      getDocs(query(userCollection(user.uid, 'savingsGoals'), limit(50)))
     ])
 
     const data = {

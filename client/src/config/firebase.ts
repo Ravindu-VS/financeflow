@@ -3,12 +3,13 @@ import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, bro
 import { getFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA0uQFX5CE0JPGxBoA3NUeCw4QOCCe4fjo",
-  authDomain: "financial-tracker-e9cee.firebaseapp.com",
-  projectId: "financial-tracker-e9cee",
-  storageBucket: "financial-tracker-e9cee.firebasestorage.app",
-  messagingSenderId: "146957008164",
-  appId: "1:146957008164:web:d9334112c3bde81e5b87b1"
+  apiKey: "AIzaSyBSUGP0sYUxDNdz68X7iIqITSxZAjxueG0",
+  authDomain: "financeflow-a6aa0.firebaseapp.com",
+  projectId: "financeflow-a6aa0",
+  storageBucket: "financeflow-a6aa0.firebasestorage.app",
+  messagingSenderId: "954990958720",
+  appId: "1:954990958720:web:ec53960e0ff217ced5ee65",
+  measurementId: "G-GNNL3C379P"
 }
 
 // Initialize Firebase

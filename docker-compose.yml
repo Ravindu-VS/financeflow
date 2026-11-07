@@ -1,0 +1,187 @@
+version: '3.9'
+
+# FinAI Enterprise — WSO2 Enterprise Architecture
+# Docker Compose Multi-Service Orchestration
+
+networks:
+  finai-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  reports_data:
+  uploads_data:
+
+services:
+
+  # ─── PostgreSQL Database ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: finai-postgres
+    environment:
+      POSTGRES_DB: finai_enterprise
+      POSTGRES_USER: finai
+      POSTGRES_PASSWORD: finai_secret
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./ai-backend/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - finai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finai -d finai_enterprise"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── Redis Cache (Rate Limiting + Sessions) ──────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: finai-redis
+    command: redis-server --appendonly yes --requirepass redis_secret
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - finai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_secret", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── FastAPI AI Backend ──────────────────────────────────────────────────────
+  ai-backend:
+    build:
+      context: ./ai-backend
+      dockerfile: Dockerfile
+    container_name: finai-ai-backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://finai:finai_secret@postgres:5432/finai_enterprise
+      REDIS_URL: redis://:redis_secret@redis:6379
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-finai-enterprise-super-secret-jwt-key-2024}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_MODEL: gemini-2.0-flash
+      ENVIRONMENT: production
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000","http://localhost:8080"]'
+    volumes:
+      - reports_data:/app/reports
+      - uploads_data:/app/uploads
+    ports:
+      - "8000:8000"
+    networks:
+      - finai-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ─── WSO2 API Gateway Simulation ────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: finai-gateway
+    environment:
+      GATEWAY_PORT: 8080
+      AI_BACKEND_URL: http://ai-backend:8000
+      NODE_BACKEND_URL: http://node-backend:5000
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-finai-enterprise-super-secret-jwt-key-2024}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-finai-gateway-api-key-2024}
+      ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
+    ports:
+      - "8080:8080"
+    networks:
+      - finai-network
+    depends_on:
+      - ai-backend
+      - node-backend
+    restart: unless-stopped
+
+  # ─── Node.js Legacy Backend ──────────────────────────────────────────────────
+  node-backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: finai-node-backend
+    environment:
+      PORT: 5000
+      MONGODB_URI: ${MONGODB_URI:-mongodb://host.docker.internal:27017/financeflow}
+      JWT_SECRET: ${JWT_SECRET_KEY:-finai-enterprise-super-secret-jwt-key-2024}
+      NODE_ENV: production
+    ports:
+      - "5000:5000"
+    networks:
+      - finai-network
+    restart: unless-stopped
+
+  # ─── React Frontend ──────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_GATEWAY_URL: http://localhost:8080
+        VITE_APP_NAME: FinAI Enterprise
+    container_name: finai-frontend
+    ports:
+      - "3000:80"
+    networks:
+      - finai-network
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+  # ─── Prometheus Metrics ──────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: finai-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - finai-network
+    restart: unless-stopped
+
+  # ─── Grafana Dashboard ────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: finai-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-finai_grafana_2024}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3001:3000"
+    networks:
+      - finai-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped

@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { investmentService } from '../../services/firebaseService'
+import { transactionService } from '../../services/financeService'
+import { useFinanceStore } from '../../store/financeStore'
+import { todayKey, mapLegacyInvestmentType } from '../../lib/finance'
 import { Investment } from '../../types'
 import { Card, SectionHeader, Button, Modal, Input, Select, Textarea } from '../ui'
 import { formatCurrency, getCurrencyLabel } from '../../utils/currency'
@@ -88,11 +91,23 @@ export default function InvestmentsPage() {
         await investmentService.update(editingInvestment._id, investmentData)
         toast.success('Investment updated successfully')
       } else {
-        await investmentService.create(investmentData)
+        const created: any = await investmentService.create({ ...investmentData, status: 'active', txId: data.recordTx === false ? 'none' : 'pending' })
+        if (data.recordTx !== false) {
+          // A new purchase is a real cash outflow → investment transaction (not an expense)
+          const date = data.purchaseDate && data.purchaseDate <= todayKey() ? data.purchaseDate : todayKey()
+          const { accounts } = useFinanceStore.getState()
+          const acc = (accounts.find(a => a.type === 'bank') || accounts[0])?.id
+          const r = await transactionService.create({
+            type: 'investment', amount: investmentData.amount, currency: 'LKR', date, category: mapLegacyInvestmentType(data.type),
+            description: data.name, accountId: acc, investmentId: created.id, status: 'cleared', source: 'manual',
+          }, { accounts })
+          investmentService.update(created.id, { txId: r.id }).catch(() => {})
+        }
         toast.success('Investment added successfully')
       }
       closeModal()
       fetchInvestments()
+      useFinanceStore.getState().refreshModules()
     } catch (error: any) {
       toast.error(error.message || 'Failed to save investment')
     }
@@ -307,7 +322,7 @@ export default function InvestmentsPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <Input
             label="Investment Name"
-            placeholder="e.g., Nifty 50 Index Fund"
+            placeholder="e.g., Commercial Bank FD"
             {...register('name', { required: 'Name is required' })}
             error={errors.name?.message as string}
           />
@@ -343,7 +358,7 @@ export default function InvestmentsPage() {
             />
             <Input
               label="Platform"
-              placeholder="e.g., Zerodha, Groww"
+              placeholder="e.g., CSE broker, bank"
               {...register('platform')}
             />
           </div>
@@ -353,6 +368,13 @@ export default function InvestmentsPage() {
             placeholder="Additional details..."
             {...register('notes')}
           />
+
+          {!editingInvestment && (
+            <label className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
+              <input type="checkbox" defaultChecked {...register('recordTx')} className="mt-1" />
+              <span>Record this purchase as an investment transaction (money leaving your bank account on the purchase date). Untick for holdings you already owned before using the app.</span>
+            </label>
+          )}
 
           <div className="flex gap-3 pt-4">
             <Button type="button" variant="outline" className="flex-1" onClick={closeModal}>

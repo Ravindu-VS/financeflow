@@ -60,6 +60,7 @@ async function getCurrentUserAsync(): Promise<User> {
 interface CacheEntry<T> {
   data: T
   timestamp: number
+  ttl: number
 }
 
 const cache = new Map<string, CacheEntry<any>>()
@@ -68,7 +69,7 @@ const SHORT_CACHE_TTL = 30000 // 30 seconds for frequently changing data
 
 function getCached<T>(key: string): T | null {
   const entry = cache.get(key)
-  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
+  if (entry && Date.now() - entry.timestamp < entry.ttl) {
     return entry.data
   }
   cache.delete(key)
@@ -76,7 +77,7 @@ function getCached<T>(key: string): T | null {
 }
 
 function setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): T {
-  cache.set(key, { data, timestamp: Date.now() })
+  cache.set(key, { data, timestamp: Date.now(), ttl })
   return data
 }
 
@@ -273,6 +274,8 @@ const createCRUD = (collectionName: string) => ({
 })
 
 // Collection Services
+// incomeService / expenseService are LEGACY (pre-upgrade collections). New entries are written to
+// `transactions` via financeService; these remain for reading old data only.
 export const incomeService = {
   ...createCRUD('incomes'),
 
@@ -407,229 +410,11 @@ export const budgetService = {
   }
 }
 
-// Analytics Service - OPTIMIZED with caching and parallel queries
-export const analyticsService = {
-  // Fetch all user data in one batch - reused across methods
-  async _fetchAllUserData() {
-    const user = await getCurrentUserAsync()
-    
-    const cacheKey = `userData_${user.uid}`
-    const cached = getCached<any>(cacheKey)
-    if (cached) return cached
+// NOTE: the former lifetime-total `analyticsService` and `insightsService` were removed in the
+// transaction-model upgrade (they summed all history, truncated at 500 docs and ignored
+// periods). All analytics now come from src/lib/finance over period-scoped transactions.
 
-    // Run ALL queries in parallel using subcollections
-    const [incomeSnapshot, expenseSnapshot, investmentSnapshot, savingsSnapshot] = await Promise.all([
-      getDocs(query(userCollection(user.uid, 'incomes'), limit(500))),
-      getDocs(query(userCollection(user.uid, 'expenses'), limit(500))),
-      getDocs(query(userCollection(user.uid, 'investments'), limit(100))),
-      getDocs(query(userCollection(user.uid, 'savingsGoals'), limit(50)))
-    ])
-
-    const data = {
-      incomes: incomeSnapshot.docs.map(doc => doc.data()),
-      expenses: expenseSnapshot.docs.map(doc => doc.data()),
-      investments: investmentSnapshot.docs.map(doc => doc.data()),
-      savingsGoals: savingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    }
-
-    return setCache(cacheKey, data, SHORT_CACHE_TTL)
-  },
-
-  async getOverview() {
-    const data = await this._fetchAllUserData()
-    
-    const totalIncome = data.incomes.reduce((sum: number, inc: any) => sum + (inc.amount || 0), 0)
-    const totalExpenses = data.expenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0)
-    const investmentValue = data.investments.reduce((sum: number, inv: any) => sum + (inv.currentValue || inv.amount || 0), 0)
-    
-    const netSavings = totalIncome - totalExpenses
-    const savingsRate = totalIncome > 0 ? (netSavings / totalIncome) * 100 : 0
-
-    return {
-      totalIncome,
-      totalExpenses,
-      netSavings,
-      investmentValue,
-      savingsRate,
-      savingsGoals: data.savingsGoals,
-      avgDailyExpense: data.expenses.length > 0 ? totalExpenses / 30 : 0
-    }
-  },
-
-  async getTrends(period: 'week' | 'month' | 'year' = 'month') {
-    const data = await this._fetchAllUserData()
-    
-    const now = new Date()
-    let months = 6
-    if (period === 'week') months = 1
-    if (period === 'year') months = 12
-    const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1)
-
-    // Filter locally instead of new queries
-    const filteredIncomes = data.incomes.filter((inc: any) => {
-      const date = inc.date?.toDate ? inc.date.toDate() : new Date(inc.date)
-      return date >= startDate
-    })
-    const filteredExpenses = data.expenses.filter((exp: any) => {
-      const date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date)
-      return date >= startDate
-    })
-
-    // Group by month
-    const monthlyData: Record<string, { income: number; expense: number }> = {}
-
-    filteredIncomes.forEach((inc: any) => {
-      const date = inc.date?.toDate ? inc.date.toDate() : new Date(inc.date)
-      const key = `${date.getFullYear()}-${date.getMonth() + 1}`
-      if (!monthlyData[key]) monthlyData[key] = { income: 0, expense: 0 }
-      monthlyData[key].income += inc.amount || 0
-    })
-
-    filteredExpenses.forEach((exp: any) => {
-      const date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date)
-      const key = `${date.getFullYear()}-${date.getMonth() + 1}`
-      if (!monthlyData[key]) monthlyData[key] = { income: 0, expense: 0 }
-      monthlyData[key].expense += exp.amount || 0
-    })
-
-    const result = Object.entries(monthlyData).map(([key, value]) => {
-      const [year, month] = key.split('-').map(Number)
-      return { year, month, ...value }
-    }).sort((a, b) => a.year - b.year || a.month - b.month)
-
-    return { monthlyData: result }
-  },
-
-  async getCategoryBreakdown() {
-    const data = await this._fetchAllUserData()
-
-    const expenseByCategory: Record<string, number> = {}
-    data.expenses.forEach((exp: any) => {
-      const category = exp.category || 'Other'
-      expenseByCategory[category] = (expenseByCategory[category] || 0) + (exp.amount || 0)
-    })
-
-    const incomeBySource: Record<string, number> = {}
-    data.incomes.forEach((inc: any) => {
-      const source = inc.category || inc.source || 'Other'
-      incomeBySource[source] = (incomeBySource[source] || 0) + (inc.amount || 0)
-    })
-
-    return {
-      expenseByCategory: Object.entries(expenseByCategory).map(([_id, total]) => ({ _id, total })),
-      incomeBySource: Object.entries(incomeBySource).map(([_id, total]) => ({ _id, total }))
-    }
-  }
-}
-
-// Insights Service (AI-like analysis)
-export const insightsService = {
-  async getFinancialHealth() {
-    const overview = await analyticsService.getOverview()
-
-    let score = 50 // Base score
-
-    // Savings rate impact (0-30 points)
-    if (overview.savingsRate >= 30) score += 30
-    else if (overview.savingsRate >= 20) score += 25
-    else if (overview.savingsRate >= 10) score += 15
-    else if (overview.savingsRate > 0) score += 10
-
-    // Investment diversification (0-20 points)
-    if (overview.investmentValue > 0) {
-      score += Math.min(20, overview.investmentValue / overview.totalIncome * 20)
-    }
-
-    return {
-      score: Math.min(100, Math.round(score)),
-      savingsRate: overview.savingsRate,
-      netWorth: overview.netSavings + overview.investmentValue
-    }
-  },
-
-  async getSavingSuggestions() {
-    const categories = await analyticsService.getCategoryBreakdown()
-    const suggestions: any[] = []
-
-    // Analyze spending patterns
-    const expenseCategories = categories.expenseByCategory || []
-    const total = expenseCategories.reduce((sum: number, cat: any) => sum + cat.total, 0)
-
-    expenseCategories.forEach((cat: any) => {
-      const percentage = (cat.total / total) * 100
-      if (percentage > 30 && cat._id !== 'Housing') {
-        suggestions.push({
-          title: `Reduce ${cat._id} spending`,
-          description: `${cat._id} accounts for ${percentage.toFixed(1)}% of your expenses`,
-          potentialSavings: Math.round(cat.total * 0.2)
-        })
-      }
-    })
-
-    // Default suggestions
-    if (suggestions.length === 0) {
-      suggestions.push(
-        { title: 'Track Daily Expenses', description: 'Monitor small purchases that add up', potentialSavings: 1500 },
-        { title: 'Use Cashback Apps', description: 'Earn rewards on regular purchases', potentialSavings: 800 }
-      )
-    }
-
-    return { suggestions }
-  },
-
-  async getInvestmentRecommendations() {
-    const overview = await analyticsService.getOverview()
-    const recommendations: any[] = []
-
-    if (overview.savingsRate > 20) {
-      recommendations.push({
-        title: 'Index Funds',
-        description: 'Low-cost diversified investment for long-term growth',
-        riskLevel: 'medium',
-        expectedReturn: '12-15%'
-      })
-    }
-
-    recommendations.push(
-      {
-        title: 'PPF Account',
-        description: 'Tax-free returns with government backing',
-        riskLevel: 'low',
-        expectedReturn: '7.1%'
-      },
-      {
-        title: 'Debt Mutual Funds',
-        description: 'Stable returns with moderate liquidity',
-        riskLevel: 'low',
-        expectedReturn: '6-8%'
-      }
-    )
-
-    return { recommendations }
-  },
-
-  async getPredictions() {
-    const trends = await analyticsService.getTrends('year')
-    const monthlyData = trends.monthlyData || []
-
-    if (monthlyData.length < 3) {
-      return { predictedIncome: 0, predictedExpenses: 0, predictedSavings: 0 }
-    }
-
-    // Simple average-based prediction
-    const recentMonths = monthlyData.slice(-3)
-    const avgIncome = recentMonths.reduce((sum, m) => sum + m.income, 0) / recentMonths.length
-    const avgExpense = recentMonths.reduce((sum, m) => sum + m.expense, 0) / recentMonths.length
-
-    return {
-      predictedIncome: Math.round(avgIncome),
-      predictedExpenses: Math.round(avgExpense),
-      predictedSavings: Math.round(avgIncome - avgExpense)
-    }
-  }
-}
-
-// Market Service (static data for now)
+// Market Service — STATIC SAMPLE DATA (not live market prices)
 export const marketService = {
   async getOverview() {
     return {

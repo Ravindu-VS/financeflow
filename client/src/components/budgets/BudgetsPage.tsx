@@ -1,290 +1,106 @@
-import { useState, useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useState } from 'react'
 import { toast } from 'react-hot-toast'
+import { PencilIcon, TrashIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { budgetService } from '../../services/firebaseService'
-import { Budget, EXPENSE_CATEGORIES } from '../../types'
-import { Card, SectionHeader, Button, Modal, Input, Select } from '../ui'
-import { formatCurrency, getCurrencyLabel } from '../../utils/currency'
-import {
-  PlusIcon,
-  PencilIcon,
-  TrashIcon,
-  ChartPieIcon,
-  ExclamationTriangleIcon
-} from '@heroicons/react/24/outline'
+import { Card, SectionHeader, Modal } from '../ui'
+import PeriodSelector from '../finance/PeriodSelector'
+import { usePeriodData } from '../../hooks/useFinance'
+import { useFinanceStore } from '../../store/financeStore'
+import { EXPENSE_CATEGORY_DEFS, getCategory } from '../../lib/finance'
+import { formatCurrency } from '../../utils/currency'
+import { Link } from 'react-router-dom'
 
+/**
+ * Budgets are PLANS. Spending shown here is actual net spending (refunds deducted) for the
+ * selected period; monthly budgets are scaled when you look at a week, quarter or year.
+ */
 export default function BudgetsPage() {
-  const [budgets, setBudgets] = useState<Budget[]>([])
-  const [loading, setLoading] = useState(true)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
+  const d = usePeriodData()
+  const { budgets, refreshModules, settings } = useFinanceStore()
+  const [modal, setModal] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState({ category: 'food_dining', amount: '', alertThreshold: '80' })
 
-  const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } = useForm()
-
-  const fetchBudgets = async () => {
+  const openForm = (id?: string) => {
+    const b = budgets.find(x => x.id === id)
+    setEditId(id || null)
+    setForm(b ? { category: b.category, amount: String(b.amount), alertThreshold: String(b.alertThreshold || 80) } : { category: EXPENSE_CATEGORY_DEFS.find(c => !budgets.some(b => b.category === c.id))?.id || 'other', amount: '', alertThreshold: '80' })
+    setModal(true)
+  }
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const amount = Number(form.amount)
+    if (!(amount > 0)) return toast.error('Enter a positive monthly amount')
+    if (!editId && budgets.some(b => b.category === form.category)) return toast.error('A budget for this category already exists')
+    const data = { category: form.category, name: getCategory(form.category).label, amount, limit: amount, period: 'monthly', alertThreshold: Number(form.alertThreshold) || 80, isActive: true }
     try {
-      setLoading(true)
-      const data = await budgetService.checkBudgetStatus()
-      const transformed = data.map((item: any) => ({
-        ...item,
-        _id: item.id
-      }))
-      setBudgets(transformed as Budget[])
-    } catch (error) {
-      toast.error('Failed to fetch budgets')
-    } finally {
-      setLoading(false)
-    }
+      editId ? await budgetService.update(editId, data) : await budgetService.create(data)
+      toast.success('Budget saved'); setModal(false); refreshModules()
+    } catch (err: any) { toast.error(err.message) }
+  }
+  const del = async (id: string) => {
+    if (!confirm('Delete this budget?')) return
+    await budgetService.delete(id); refreshModules(); toast.success('Budget deleted')
   }
 
-  useEffect(() => {
-    fetchBudgets()
-  }, [])
-
-  const openModal = (budget?: Budget) => {
-    if (budget) {
-      setEditingBudget(budget)
-      setValue('category', budget.category)
-      setValue('limit', budget.limit)
-      setValue('period', budget.period)
-      setValue('alertThreshold', budget.alertThreshold || 80)
-    } else {
-      reset()
-      setEditingBudget(null)
-    }
-    setIsModalOpen(true)
-  }
-
-  const closeModal = () => {
-    setIsModalOpen(false)
-    setEditingBudget(null)
-    reset()
-  }
-
-  const onSubmit = async (data: any) => {
-    try {
-      const budgetData = {
-        ...data,
-        limit: parseFloat(data.limit),
-        alertThreshold: parseFloat(data.alertThreshold || 80)
-      }
-      
-      if (editingBudget) {
-        await budgetService.update(editingBudget._id, budgetData)
-        toast.success('Budget updated successfully')
-      } else {
-        await budgetService.create(budgetData)
-        toast.success('Budget created successfully')
-      }
-      closeModal()
-      fetchBudgets()
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to save budget')
-    }
-  }
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this budget?')) return
-    try {
-      await budgetService.delete(id)
-      toast.success('Budget deleted successfully')
-      fetchBudgets()
-    } catch (error) {
-      toast.error('Failed to delete budget')
-    }
-  }
-
-  // Calculate totals
-  const totalBudget = budgets.reduce((sum, b) => sum + b.limit, 0)
-  const totalSpent = budgets.reduce((sum, b) => sum + (b.spent || 0), 0)
-  const overBudgetCount = budgets.filter(b => (b.spent || 0) > b.limit).length
-
-  const categoryOptions = EXPENSE_CATEGORIES.map(cat => ({ value: cat, label: cat }))
-
-  const getProgressColor = (spent: number, limit: number, threshold: number) => {
-    const percentage = (spent / limit) * 100
-    if (percentage >= 100) return 'bg-red-500'
-    if (percentage >= threshold) return 'bg-yellow-500'
-    return 'gradient-green'
-  }
-
-  const getStatusBadge = (spent: number, limit: number) => {
-    const percentage = (spent / limit) * 100
-    if (percentage >= 100) return { text: 'Over Budget', class: 'bg-red-100 dark:bg-red-900/30 text-red-600' }
-    if (percentage >= 80) return { text: 'Warning', class: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600' }
-    return { text: 'On Track', class: 'bg-green-100 dark:bg-green-900/30 text-green-600' }
-  }
+  const total = d.budgetStatus.reduce((a, b) => a + b.amount, 0)
+  const spent = d.budgetStatus.reduce((a, b) => a + b.spent, 0)
+  const unbudgeted = d.byCategory.filter(c => !budgets.some(b => b.category === c.category))
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Budgets</h1>
-          <p className="text-gray-500 dark:text-gray-400">Set spending limits for each category</p>
-        </div>
-        <Button onClick={() => openModal()} icon={<PlusIcon className="w-5 h-5" />}>
-          Create Budget
-        </Button>
+    <div className="space-y-5 pb-24 lg:pb-6">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+        <div><h1 className="text-2xl font-bold text-gray-900 dark:text-white">Budgets</h1>
+          <p className="text-sm text-gray-500">Budgeted vs actual vs forecast · approach: <Link to="/planning" className="text-primary-500">{settings.budgetMethod.replace('_', ' ')}</Link></p></div>
+        <div className="flex gap-2 items-end"><PeriodSelector compact /><button className="btn btn-primary min-h-[44px]" onClick={() => openForm()}>+ Budget</button></div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Budget</p>
-          <p className="text-2xl font-bold text-blue-500">{formatCurrency(totalBudget)}</p>
-        </Card>
-        <Card className="text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Spent</p>
-          <p className={`text-2xl font-bold ${totalSpent > totalBudget ? 'text-red-500' : 'text-green-500'}`}>
-            {formatCurrency(totalSpent)}
-          </p>
-        </Card>
-        <Card className="text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Over Budget</p>
-          <p className={`text-2xl font-bold ${overBudgetCount > 0 ? 'text-red-500' : 'text-green-500'}`}>
-            {overBudgetCount} categories
-          </p>
-        </Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card padding="sm"><p className="text-xs text-gray-500">Budgeted</p><p className="text-lg font-bold tabular-nums">{formatCurrency(total)}</p></Card>
+        <Card padding="sm"><p className="text-xs text-gray-500">Spent (budgeted categories)</p><p className="text-lg font-bold text-red-600 tabular-nums">{formatCurrency(spent)}</p></Card>
+        <Card padding="sm"><p className="text-xs text-gray-500">Remaining</p><p className={`text-lg font-bold tabular-nums ${total - spent < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(total - spent)}</p></Card>
+        <Card padding="sm"><p className="text-xs text-gray-500">Unbudgeted spending</p><p className="text-lg font-bold text-amber-600 tabular-nums">{formatCurrency(unbudgeted.reduce((a, c) => a + c.total, 0))}</p></Card>
       </div>
 
-      {/* Budgets Grid */}
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
-        </div>
-      ) : budgets.length === 0 ? (
-        <Card className="text-center py-12">
-          <ChartPieIcon className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-          <p className="text-gray-500 dark:text-gray-400">No budgets set yet</p>
-          <Button variant="outline" className="mt-4" onClick={() => openModal()}>
-            Create your first budget
-          </Button>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {budgets.map((budget) => {
-            const spent = budget.spent || 0
-            const percentage = Math.min((spent / budget.limit) * 100, 100)
-            const remaining = budget.limit - spent
-            const status = getStatusBadge(spent, budget.limit)
-
-            return (
-              <Card key={budget._id}>
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{budget.category}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">{budget.period}</p>
+      <Card>
+        <SectionHeader title="Category budgets" subtitle={d.period.unit === 'month' ? 'Monthly' : 'Monthly budgets scaled to the selected period'} />
+        {d.budgetStatus.length ? (
+          <div className="space-y-4">
+            {d.budgetStatus.map(b => {
+              const doc = budgets.find(x => x.id === b.id)
+              const warn = b.pct >= (doc?.alertThreshold || 80)
+              return (
+                <div key={b.id}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-gray-800 dark:text-gray-200">{getCategory(b.category).icon} {getCategory(b.category).label} {warn && <ExclamationTriangleIcon className="inline w-4 h-4 text-amber-500" />}</span>
+                    <span className="flex items-center gap-1">
+                      <span className="text-sm tabular-nums text-gray-500">{formatCurrency(b.spent)} / {formatCurrency(b.amount)}</span>
+                      <button aria-label="Edit" className="p-1.5 text-gray-400 hover:text-primary-500" onClick={() => openForm(b.id)}><PencilIcon className="w-4 h-4" /></button>
+                      <button aria-label="Delete" className="p-1.5 text-gray-400 hover:text-red-500" onClick={() => del(b.id)}><TrashIcon className="w-4 h-4" /></button>
+                    </span>
                   </div>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${status.class}`}>
-                    {status.text}
-                  </span>
+                  <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mt-1 relative">
+                    <div className={`h-full rounded-full ${b.pct >= 100 ? 'bg-red-500' : warn ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${Math.min(100, b.pct)}%` }} />
+                    {b.forecast !== undefined && b.amount > 0 && <div className="absolute top-0 bottom-0 w-0.5 bg-blue-500" style={{ left: `${Math.min(100, b.forecast / b.amount * 100)}%` }} title="Forecast" />}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {b.remaining >= 0 ? `${formatCurrency(b.remaining)} left` : `${formatCurrency(-b.remaining)} over`} · {b.pct}% used
+                    {b.forecast !== undefined && <> · <span className={b.forecast > b.amount ? 'text-amber-600' : ''}>forecast {formatCurrency(b.forecast)}{b.forecast > b.amount ? ` (may exceed by ≈${formatCurrency(b.forecast - b.amount)})` : ''}</span></>}
+                  </p>
                 </div>
-
-                {/* Progress */}
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {formatCurrency(spent)} spent
-                    </span>
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {percentage.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${getProgressColor(spent, budget.limit, budget.alertThreshold || 80)}`}
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className={remaining < 0 ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}>
-                      {remaining < 0 ? 'Over by ' : 'Remaining: '}
-                      {formatCurrency(Math.abs(remaining))}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-400">
-                      Limit: {formatCurrency(budget.limit)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Warning if near limit */}
-                {spent >= budget.limit * 0.8 && spent < budget.limit && (
-                  <div className="flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-400 mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                    <ExclamationTriangleIcon className="w-4 h-4" />
-                    <span>Approaching budget limit!</span>
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex gap-2 pt-2 border-t dark:border-gray-700">
-                  <button
-                    onClick={() => openModal(budget)}
-                    className="flex-1 flex items-center justify-center gap-2 p-2 text-gray-500 hover:text-primary-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    <PencilIcon className="w-4 h-4" />
-                    <span className="text-sm">Edit</span>
-                  </button>
-                  <button
-                    onClick={() => handleDelete(budget._id)}
-                    className="flex-1 flex items-center justify-center gap-2 p-2 text-gray-500 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    <TrashIcon className="w-4 h-4" />
-                    <span className="text-sm">Delete</span>
-                  </button>
-                </div>
-              </Card>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Create/Edit Modal */}
-      <Modal isOpen={isModalOpen} onClose={closeModal} title={editingBudget ? 'Edit Budget' : 'Create Budget'}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <Select
-            label="Category"
-            options={[{ value: '', label: 'Select category' }, ...categoryOptions]}
-            {...register('category', { required: 'Category is required' })}
-            error={errors.category?.message as string}
-          />
-          
-          <Input
-            label={getCurrencyLabel('Budget Limit')}
-            type="number"
-            placeholder="10000"
-            {...register('limit', { required: 'Limit is required', min: { value: 1, message: 'Must be positive' } })}
-            error={errors.limit?.message as string}
-          />
-
-          <Select
-            label="Period"
-            options={[
-              { value: 'weekly', label: 'Weekly' },
-              { value: 'monthly', label: 'Monthly' },
-              { value: 'yearly', label: 'Yearly' }
-            ]}
-            {...register('period')}
-          />
-
-          <Input
-            label="Alert Threshold (%)"
-            type="number"
-            placeholder="80"
-            {...register('alertThreshold', { min: { value: 0, message: 'Min 0' }, max: { value: 100, message: 'Max 100' } })}
-          />
-          <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
-            Get alerted when spending reaches this percentage of the budget
-          </p>
-
-          <div className="flex gap-3 pt-4">
-            <Button type="button" variant="outline" className="flex-1" onClick={closeModal}>
-              Cancel
-            </Button>
-            <Button type="submit" className="flex-1" loading={isSubmitting}>
-              {editingBudget ? 'Update' : 'Create'} Budget
-            </Button>
+              )
+            })}
           </div>
+        ) : <p className="text-sm text-gray-500">No budgets yet.</p>}
+        {unbudgeted.length > 0 && <p className="text-xs text-gray-500 mt-4">Spending without a budget: {unbudgeted.map(c => `${getCategory(c.category).label} ${formatCurrency(c.total)}`).join(' · ')}</p>}
+      </Card>
+
+      <Modal isOpen={modal} onClose={() => setModal(false)} title={editId ? 'Edit budget' : 'New budget'}>
+        <form onSubmit={save} className="space-y-3">
+          <select className="input" value={form.category} disabled={!!editId} onChange={e => setForm({ ...form, category: e.target.value })}>{EXPENSE_CATEGORY_DEFS.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select>
+          <label className="block text-sm">Monthly amount (Rs.)<input inputMode="decimal" className="input mt-1" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></label>
+          <label className="block text-sm">Alert at (% used)<input inputMode="numeric" className="input mt-1" value={form.alertThreshold} onChange={e => setForm({ ...form, alertThreshold: e.target.value })} /></label>
+          <div className="flex gap-2"><button type="button" className="btn btn-secondary flex-1" onClick={() => setModal(false)}>Cancel</button><button className="btn btn-primary flex-1">Save</button></div>
         </form>
       </Modal>
     </div>

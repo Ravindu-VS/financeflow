@@ -1,0 +1,64 @@
+rules_version = '2';
+
+// FinanceFlow — Firestore security rules
+// Deploy: firebase deploy --only firestore:rules
+//
+// Every document lives under users/{uid}/... and is readable/writable only by that user.
+// Transactions and accounts are validated server-side so a malicious client cannot write
+// malformed financial data. Audit logs are append-only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function isDateKey(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function validTxType(t) {
+      return t in ['income','expense','transfer','investment','withdrawal','savings_contribution',
+                   'savings_withdrawal','refund','reimbursement','adjustment'];
+    }
+    function validTransaction(d) {
+      return validTxType(d.type)
+        && d.amount is number
+        && (d.type == 'adjustment' || d.amount > 0)
+        && d.amount < 1000000000 && d.amount > -1000000000
+        && isDateKey(d.date)
+        && (!('category' in d) || (d.category is string && d.category.size() <= 64))
+        && (!('description' in d) || (d.description is string && d.description.size() <= 500))
+        && (!('notes' in d) || (d.notes is string && d.notes.size() <= 2000))
+        && d.status in ['cleared','pending','void']
+        && d.source in ['manual','voice','imported','api','bank_sync','ai','recurring','migration'];
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      match /transactions/{id} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid) && validTransaction(request.resource.data);
+        allow update: if isOwner(uid) && validTransaction(request.resource.data);
+      }
+
+      match /accounts/{id} {
+        allow read, delete: if isOwner(uid);
+        allow write: if isOwner(uid)
+          && (!('balance' in request.resource.data) || request.resource.data.balance is number);
+      }
+
+      match /auditLogs/{id} {
+        allow read, create: if isOwner(uid);
+        allow update, delete: if false;
+      }
+
+      // recurringRules, snapshots, meta, budgets, savingsGoals, investments, and the
+      // read-only legacy collections (incomes, expenses)
+      // NOTE: rules are OR-ed, so the validated collections are excluded explicitly.
+      match /{collection}/{id} {
+        allow read, write: if isOwner(uid) && !(collection in ['transactions', 'accounts', 'auditLogs']);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

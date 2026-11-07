@@ -1,344 +1,92 @@
-import { useState, useEffect } from 'react'
-import { toast } from 'react-hot-toast'
-import { insightsService } from '../../services/firebaseService'
-import { Card, SectionHeader, Button } from '../ui'
-import {
-  LightBulbIcon,
-  SparklesIcon,
-  ArrowTrendingUpIcon,
-  BanknotesIcon,
-  ExclamationTriangleIcon,
-  CheckCircleIcon,
-  ChartBarIcon,
-  CurrencyRupeeIcon
-} from '@heroicons/react/24/outline'
+import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
+import { Card, SectionHeader } from '../ui'
+import PeriodSelector from '../finance/PeriodSelector'
+import { usePeriodData } from '../../hooks/useFinance'
+import { useFinanceStore } from '../../store/financeStore'
+import { analyzeBehavior, detectRecurring, subscriptionSpend, formatDateKey, SMALL_PURCHASE_LIMIT, getCategory, type Insight } from '../../lib/finance'
+import { formatCurrency } from '../../utils/currency'
 
-interface Insight {
-  type: string
-  title: string
-  description: string
-  priority: 'high' | 'medium' | 'low'
-  action?: string
-  value?: number
+const KIND = {
+  fact: { label: 'FACT', cls: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200', help: 'Measured from your recorded transactions' },
+  prediction: { label: 'PREDICTION', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300', help: 'An estimate — may not happen' },
+  recommendation: { label: 'SUGGESTION', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300', help: 'General guidance, not personal financial advice' },
 }
 
+function InsightCard({ i }: { i: Insight }) {
+  const k = KIND[i.kind]
+  const tone = i.tone === 'positive' ? 'border-l-green-500' : i.tone === 'negative' ? 'border-l-red-500' : i.tone === 'warning' ? 'border-l-amber-500' : 'border-l-gray-300'
+  return (
+    <div className={`card p-4 border-l-4 ${tone}`}>
+      <div className="flex items-center gap-2 mb-1"><span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${k.cls}`} title={k.help}>{k.label}</span><h3 className="font-medium text-gray-900 dark:text-white">{i.title}</h3></div>
+      <p className="text-sm text-gray-700 dark:text-gray-300">{i.detail}</p>
+      <p className="text-xs text-gray-400 mt-1">Basis: {i.basis}</p>
+    </div>
+  )
+}
+
+/** Behavioural analytics + smart insights, all computed from actual transactions. */
 export default function InsightsPage() {
-  const [loading, setLoading] = useState(true)
-  const [predictions, setPredictions] = useState<any>(null)
-  const [savingSuggestions, setSavingSuggestions] = useState<any[]>([])
-  const [investmentRecs, setInvestmentRecs] = useState<any[]>([])
-  const [healthScore, setHealthScore] = useState<any>(null)
-
-  const fetchInsights = async () => {
-    try {
-      setLoading(true)
-      const [predictionsData, savingsData, investmentsData, healthData] = await Promise.all([
-        insightsService.getPredictions().catch(() => null),
-        insightsService.getSavingSuggestions().catch(() => ({ suggestions: [] })),
-        insightsService.getInvestmentRecommendations().catch(() => ({ recommendations: [] })),
-        insightsService.getFinancialHealth().catch(() => null)
-      ])
-      
-      setPredictions(predictionsData)
-      setSavingSuggestions(savingsData?.suggestions || [])
-      setInvestmentRecs(investmentsData?.recommendations || [])
-      setHealthScore(healthData)
-    } catch (error) {
-      toast.error('Failed to fetch insights')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchInsights()
-  }, [])
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'text-red-500 bg-red-100 dark:bg-red-900/30'
-      case 'medium': return 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30'
-      case 'low': return 'text-green-500 bg-green-100 dark:bg-green-900/30'
-      default: return 'text-gray-500 bg-gray-100 dark:bg-gray-700'
-    }
-  }
-
-  const getHealthScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-500'
-    if (score >= 60) return 'text-yellow-500'
-    if (score >= 40) return 'text-orange-500'
-    return 'text-red-500'
-  }
-
-  const getHealthScoreGradient = (score: number) => {
-    if (score >= 80) return 'from-green-500 to-emerald-500'
-    if (score >= 60) return 'from-yellow-500 to-amber-500'
-    if (score >= 40) return 'from-orange-500 to-amber-600'
-    return 'from-red-500 to-rose-600'
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
-      </div>
-    )
-  }
-
-  // Use actual API data - empty arrays if no data
-  const displayInsights: Insight[] = predictions?.insights || []
-  const displaySuggestions = savingSuggestions || []
-  const displayInvestmentRecs = investmentRecs || []
-
-  const financialHealthScore = healthScore?.score || 0
-  const hasUserData = displayInsights.length > 0 || displaySuggestions.length > 0 || healthScore?.score
+  const d = usePeriodData()
+  const { transactions, rules, settings } = useFinanceStore()
+  const b = useMemo(() => analyzeBehavior(d.txs, d.period, transactions), [d.txs, d.period, transactions])
+  const recurring = useMemo(() => detectRecurring(transactions, rules, settings.dismissedSuggestions), [transactions, rules, settings.dismissedSuggestions])
+  const subs = useMemo(() => subscriptionSpend(d.txs, d.period.start, d.period.end), [d.txs, d.period])
+  const groups = (['fact', 'prediction', 'recommendation'] as const).map(k => ({ k, items: d.insights.filter(i => i.kind === k) }))
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <SparklesIcon className="w-7 h-7 text-yellow-500" />
-            AI Insights
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400">Personalized financial recommendations powered by AI</p>
-        </div>
-        <Button onClick={fetchInsights} variant="outline" icon={<SparklesIcon className="w-5 h-5" />}>
-          Refresh Insights
-        </Button>
+    <div className="space-y-5 pb-24 lg:pb-6">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+        <div><h1 className="text-2xl font-bold text-gray-900 dark:text-white">Insights</h1><p className="text-sm text-gray-500">Facts, predictions and suggestions — each with the numbers behind it</p></div>
+        <PeriodSelector />
       </div>
 
-      {/* Financial Health Score */}
-      <Card className="relative overflow-hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-          <div className="flex-shrink-0">
-            <div className="relative w-40 h-40">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  stroke="currentColor"
-                  strokeWidth="8"
-                  fill="none"
-                  className="text-gray-200 dark:text-gray-700"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  stroke="url(#gradient)"
-                  strokeWidth="8"
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeDasharray={`${financialHealthScore * 2.83} 283`}
-                />
-                <defs>
-                  <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#10b981" />
-                    <stop offset="100%" stopColor="#059669" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={`text-4xl font-bold ${getHealthScoreColor(financialHealthScore)}`}>
-                  {financialHealthScore}
-                </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">Health Score</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex-1">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              Financial Health Overview
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              {financialHealthScore >= 80 
-                ? "Excellent! Your finances are in great shape. Keep up the good work!"
-                : financialHealthScore >= 60
-                ? "Good progress! A few improvements could boost your financial health."
-                : "There's room for improvement. Focus on the recommendations below."}
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <CheckCircleIcon className="w-6 h-6 text-green-500 mx-auto mb-1" />
-                <p className="text-sm text-gray-600 dark:text-gray-400">Savings</p>
-                <p className="font-semibold text-gray-900 dark:text-white">Good</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <ExclamationTriangleIcon className="w-6 h-6 text-yellow-500 mx-auto mb-1" />
-                <p className="text-sm text-gray-600 dark:text-gray-400">Spending</p>
-                <p className="font-semibold text-gray-900 dark:text-white">Moderate</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <ChartBarIcon className="w-6 h-6 text-blue-500 mx-auto mb-1" />
-                <p className="text-sm text-gray-600 dark:text-gray-400">Investments</p>
-                <p className="font-semibold text-gray-900 dark:text-white">Growing</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <BanknotesIcon className="w-6 h-6 text-purple-500 mx-auto mb-1" />
-                <p className="text-sm text-gray-600 dark:text-gray-400">Debt</p>
-                <p className="font-semibold text-gray-900 dark:text-white">Low</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Key Insights */}
-      <Card>
-        <SectionHeader 
-          title="Key Insights" 
-          subtitle="Important observations about your finances"
-        />
-        {displayInsights.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {displayInsights.map((insight, index) => (
-            <div
-              key={index}
-              className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-primary-300 dark:hover:border-primary-700 transition-colors"
-            >
-              <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${getPriorityColor(insight.priority)}`}>
-                  {insight.type === 'warning' ? (
-                    <ExclamationTriangleIcon className="w-5 h-5" />
-                  ) : insight.type === 'opportunity' ? (
-                    <ArrowTrendingUpIcon className="w-5 h-5" />
-                  ) : (
-                    <LightBulbIcon className="w-5 h-5" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="font-medium text-gray-900 dark:text-white">{insight.title}</h3>
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full capitalize ${getPriorityColor(insight.priority)}`}>
-                      {insight.priority}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{insight.description}</p>
-                  {insight.value && (
-                    <p className="text-sm font-medium text-primary-500">
-                      ₹{insight.value.toLocaleString('en-IN')}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <LightBulbIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No insights available yet</p>
-            <p className="text-sm mt-1">Add income and expenses to get personalized insights</p>
-          </div>
-        )}
-      </Card>
-
-      {/* Saving Suggestions */}
-      <Card>
-        <SectionHeader 
-          title="Money-Saving Suggestions" 
-          subtitle="Practical ways to reduce expenses"
-        />
-        {displaySuggestions.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {displaySuggestions.map((suggestion: any, index: number) => (
-            <div
-              key={index}
-              className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800"
-            >
-              <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/50 flex items-center justify-center mb-3">
-                <CurrencyRupeeIcon className="w-5 h-5 text-green-600" />
-              </div>
-              <h3 className="font-medium text-gray-900 dark:text-white mb-1">{suggestion.title}</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{suggestion.description}</p>
-              <p className="text-lg font-bold text-green-600">
-                Save ₹{(suggestion.potentialSavings || 0).toLocaleString('en-IN')}/mo
-              </p>
-            </div>
-          ))}
-        </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <BanknotesIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No saving suggestions yet</p>
-            <p className="text-sm mt-1">Track your expenses to get personalized saving tips</p>
-          </div>
-        )}
-      </Card>
-
-      {/* Investment Recommendations */}
-      <Card>
-        <SectionHeader 
-          title="Investment Recommendations" 
-          subtitle="Opportunities to grow your wealth"
-        />
-        {displayInvestmentRecs.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {displayInvestmentRecs.map((rec: any, index: number) => (
-            <div
-              key={index}
-              className="p-4 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-xl border border-purple-200 dark:border-purple-800"
-            >
-              <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center mb-3">
-                <ChartBarIcon className="w-5 h-5 text-purple-600" />
-              </div>
-              <h3 className="font-medium text-gray-900 dark:text-white mb-1">{rec.title}</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{rec.description}</p>
-              <div className="flex items-center justify-between">
-                <span className={`px-2 py-0.5 text-xs font-medium rounded-full capitalize ${
-                  rec.riskLevel === 'low' ? 'bg-green-100 text-green-600 dark:bg-green-900/30' :
-                  rec.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30' :
-                  'bg-red-100 text-red-600 dark:bg-red-900/30'
-                }`}>
-                  {rec.riskLevel} risk
-                </span>
-                <span className="text-sm font-medium text-purple-600">{rec.expectedReturn}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <ChartBarIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No investment recommendations yet</p>
-            <p className="text-sm mt-1">Add your financial data to get personalized investment advice</p>
-          </div>
-        )}
-      </Card>
-
-      {/* AI Predictions */}
-      {predictions && (
+      {d.forecast && (
         <Card>
-          <SectionHeader 
-            title="Predictions" 
-            subtitle="AI-powered forecasts for next month"
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl text-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Predicted Income</p>
-              <p className="text-2xl font-bold text-green-500">
-                ₹{(predictions.predictedIncome || 0).toLocaleString('en-IN')}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl text-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Predicted Expenses</p>
-              <p className="text-2xl font-bold text-red-500">
-                ₹{(predictions.predictedExpenses || 0).toLocaleString('en-IN')}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl text-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Predicted Savings</p>
-              <p className="text-2xl font-bold text-blue-500">
-                ₹{(predictions.predictedSavings || 0).toLocaleString('en-IN')}
-              </p>
-            </div>
+          <SectionHeader title="Rest-of-month forecast" subtitle={`Confidence: ${d.forecast.confidence}`} />
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div><p className="text-xs text-gray-500">Likely low</p><p className="font-semibold tabular-nums">{formatCurrency(d.forecast.low)}</p></div>
+            <div><p className="text-xs text-gray-500">Expected spending</p><p className="text-xl font-bold text-blue-600 tabular-nums">{formatCurrency(d.forecast.expected)}</p></div>
+            <div><p className="text-xs text-gray-500">Likely high</p><p className="font-semibold tabular-nums">{formatCurrency(d.forecast.high)}</p></div>
           </div>
+          <p className="text-xs text-gray-500 mt-2">Expected end-of-month net cash flow ≈ <b>{formatCurrency(d.summary.income + d.safeToSpend.expectedIncome - d.forecast.expected)}</b> (income so far + expected recurring income − forecast spending).</p>
+          <p className="text-xs text-gray-400 mt-1">{d.forecast.basis} Predictions are estimates, not guarantees.</p>
         </Card>
       )}
+
+      {groups.map(g => g.items.length > 0 && (
+        <div key={g.k} className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">{g.k === 'fact' ? 'What happened' : g.k === 'prediction' ? 'What may happen' : 'What you could do'}</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{g.items.map(i => <InsightCard key={i.id} i={i} />)}</div>
+        </div>
+      ))}
+      {!d.insights.length && <Card><p className="text-sm text-gray-500">Not enough data in this period yet. Insights appear as you record transactions.</p></Card>}
+
+      <Card>
+        <SectionHeader title="Spending behaviour" subtitle={d.period.label} />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div><p className="text-xs text-gray-500">Weekday avg / day</p><p className="font-semibold tabular-nums">{formatCurrency(b.weekdayAvgPerDay)}</p></div>
+          <div><p className="text-xs text-gray-500">Weekend avg / day</p><p className="font-semibold tabular-nums">{formatCurrency(b.weekendAvgPerDay)}</p>{b.weekendVsWeekdayPct !== null && <p className={`text-xs ${b.weekendVsWeekdayPct > 0 ? 'text-amber-600' : 'text-green-600'}`}>{b.weekendVsWeekdayPct > 0 ? '+' : ''}{b.weekendVsWeekdayPct.toFixed(0)}% vs weekdays</p>}</div>
+          <div><p className="text-xs text-gray-500">Small purchases (&lt; {formatCurrency(SMALL_PURCHASE_LIMIT)})</p><p className="font-semibold tabular-nums">{formatCurrency(b.smallPurchases.total)}</p><p className="text-xs text-gray-400">{b.smallPurchases.count} purchases</p></div>
+          <div><p className="text-xs text-gray-500">Unexpected / emergency</p><p className="font-semibold tabular-nums">{formatCurrency(b.unexpected.total)}</p><p className="text-xs text-gray-400">{b.unexpected.count} expense(s)</p></div>
+          <div><p className="text-xs text-gray-500">Payday spending (3 days)</p>{b.paydaySpending ? <><p className="font-semibold tabular-nums">{formatCurrency(b.paydaySpending.windowTotal)}</p><p className="text-xs text-gray-400">{b.paydaySpending.ratio ? `${b.paydaySpending.ratio.toFixed(1)}× a normal 3 days` : ''}</p></> : <p className="text-gray-400">No salary recorded</p>}</div>
+          <div><p className="text-xs text-gray-500">Subscriptions</p><p className="font-semibold tabular-nums">{formatCurrency(subs.total)}</p><p className="text-xs text-gray-400">{subs.items.length} payment(s)</p></div>
+          <div><p className="text-xs text-gray-500">Income variability (6 mo)</p><p className="font-semibold">{b.incomeVariability === null ? '—' : `${b.incomeVariability.toFixed(0)}%`}</p><p className="text-xs text-gray-400">{b.incomeVariability === null ? '' : b.incomeVariability < 10 ? 'Stable' : b.incomeVariability < 30 ? 'Moderate' : 'Irregular'}</p></div>
+          <div><p className="text-xs text-gray-500">Saving / investing consistency (6 mo)</p><p className="font-semibold">{b.savingsConsistency.toFixed(0)}% / {b.investmentConsistency.toFixed(0)}%</p><p className="text-xs text-gray-400">of months with activity</p></div>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card>
+          <SectionHeader title="Large occasional expenses" />
+          {b.largeOccasional.length ? b.largeOccasional.map(t => <div key={t.id} className="flex justify-between text-sm py-1"><span>{formatDateKey(t.date)} · {t.description || getCategory(t.category).label}</span><span className="tabular-nums">{formatCurrency(t.amount)}</span></div>) : <p className="text-sm text-gray-500">None in this period.</p>}
+          {b.spikes.length > 0 && <p className="text-xs text-amber-600 mt-2">Spending spikes on: {b.spikes.map(s => `${formatDateKey(s.date)} (${formatCurrency(s.total)})`).join(', ')}</p>}
+        </Card>
+        <Card>
+          <SectionHeader title="Recurring payments detected" action={<Link to="/planning" className="text-sm text-primary-500">Review</Link>} />
+          {recurring.length ? recurring.slice(0, 6).map(r => <div key={r.key} className="flex justify-between text-sm py-1"><span>{r.isSubscription ? '📱' : '🔁'} {r.merchant}</span><span className="tabular-nums">~{formatCurrency(r.averageAmount)} {r.frequency}</span></div>) : <p className="text-sm text-gray-500">No new recurring patterns detected.</p>}
+        </Card>
+      </div>
     </div>
   )
 }

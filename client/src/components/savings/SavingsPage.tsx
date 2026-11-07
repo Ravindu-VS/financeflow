@@ -14,6 +14,8 @@ import {
   ArrowUpIcon
 } from '@heroicons/react/24/outline'
 import { Timestamp } from 'firebase/firestore'
+import { useQuickAdd } from '../../store/quickAddStore'
+import { useFinanceStore } from '../../store/financeStore'
 
 export default function SavingsPage() {
   const [goals, setGoals] = useState<SavingsGoal[]>([])
@@ -43,9 +45,14 @@ export default function SavingsPage() {
     }
   }
 
+  const storeGoals = useFinanceStore(s => s.goals)
+  const refreshModules = useFinanceStore(s => s.refreshModules)
+  const quick = useQuickAdd()
+
+  // Re-read goals whenever a contribution transaction updates them
   useEffect(() => {
     fetchGoals()
-  }, [])
+  }, [storeGoals])
 
   const openModal = (goal?: SavingsGoal) => {
     if (goal) {
@@ -70,10 +77,10 @@ export default function SavingsPage() {
     reset()
   }
 
+  // A contribution is a real money movement → recorded as a savings_contribution transaction
+  // (reduces available cash, counts as Savings, never as an expense) and added to the goal.
   const openContributeModal = (goal: SavingsGoal) => {
-    setSelectedGoal(goal)
-    resetContribute()
-    setIsContributeModalOpen(true)
+    quick.open('savings_contribution', { goalId: goal._id, description: `Contribution: ${goal.name}` })
   }
 
   const onSubmit = async (data: any) => {
@@ -93,7 +100,7 @@ export default function SavingsPage() {
         toast.success('Goal created successfully')
       }
       closeModal()
-      fetchGoals()
+      refreshModules()
     } catch (error: any) {
       toast.error(error.message || 'Failed to save goal')
     }
@@ -116,8 +123,8 @@ export default function SavingsPage() {
     if (!confirm('Are you sure you want to delete this goal?')) return
     try {
       await savingsService.delete(id)
-      toast.success('Goal deleted successfully')
-      fetchGoals()
+      toast.success('Goal deleted successfully (its contribution transactions are kept)')
+      refreshModules()
     } catch (error) {
       toast.error('Failed to delete goal')
     }

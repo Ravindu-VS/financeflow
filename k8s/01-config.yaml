@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: finai-enterprise
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finai-config
+  namespace: finai-enterprise
+data:
+  NODE_ENV: "production"
+  GEMINI_MODEL: "gemini-2.0-flash"
+  LLM_PROVIDER: "gemini"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: finai-secrets
+  namespace: finai-enterprise
+type: Opaque
+stringData:
+  POSTGRES_USER: "finai"
+  POSTGRES_PASSWORD: "finai_secret_password"
+  POSTGRES_DB: "finai_enterprise"
+  DATABASE_URL: "postgresql+asyncpg://finai:finai_secret_password@postgres:5432/finai_enterprise"
+  JWT_SECRET_KEY: "your_super_secret_jwt_key_here_please_change"
+  GEMINI_API_KEY: "your_actual_gemini_api_key"

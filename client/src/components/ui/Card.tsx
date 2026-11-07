@@ -24,13 +24,16 @@ export function Card({ children, className = '', padding = 'md' }: CardProps) {
 
 interface StatCardProps {
   title: string
-  value: string | number
+  value: string | number | null
   icon?: ReactNode
   trend?: {
     value: number
     isPositive: boolean
-  }
-  color?: 'green' | 'blue' | 'purple' | 'orange' | 'red'
+    label?: string
+  } | null
+  /** Shown under the value when there is no trend (e.g. "of Rs. 23,000"). */
+  hint?: string
+  color?: 'green' | 'blue' | 'purple' | 'orange' | 'red' | 'teal' | 'amber'
   className?: string
 }
 
@@ -39,7 +42,9 @@ const colorClasses = {
   blue: 'from-blue-500 to-blue-600',
   purple: 'from-purple-500 to-purple-600',
   orange: 'from-orange-500 to-orange-600',
-  red: 'from-red-500 to-red-600'
+  red: 'from-red-500 to-red-600',
+  teal: 'from-teal-500 to-teal-600',
+  amber: 'from-amber-500 to-amber-600'
 }
 
 export function StatCard({ 
@@ -47,6 +52,7 @@ export function StatCard({
   value, 
   icon, 
   trend, 
+  hint,
   color = 'green',
   className = '' 
 }: StatCardProps) {
@@ -55,17 +61,19 @@ export function StatCard({
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">{title}</p>
-          <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">
-            {typeof value === 'number' ? formatCurrency(value) : value}
+          <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">
+            {value === null ? '—' : typeof value === 'number' ? formatCurrency(value) : value}
           </p>
-          {trend && (
+          {trend ? (
             <div className="flex items-center mt-2 text-sm">
               <span className={trend.isPositive ? 'text-green-500' : 'text-red-500'}>
-                {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%
+                {trend.value >= 0 ? '↑' : '↓'} {Math.abs(trend.value).toFixed(0)}%
               </span>
-              <span className="text-gray-400 ml-1">vs last month</span>
+              <span className="text-gray-400 ml-1">{trend.label || 'vs last month'}</span>
             </div>
-          )}
+          ) : hint ? (
+            <p className="mt-2 text-sm text-gray-400">{hint}</p>
+          ) : null}
         </div>
         {icon && (
           <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${colorClasses[color]} flex items-center justify-center text-white`}>

@@ -1,281 +1,249 @@
-# FinanceFlow 💰
+# FinAI Enterprise — AI-Powered Financial Management SaaS Platform
 
-A modern Progressive Web App (PWA) for personal finance management, designed specifically for Sri Lankan users.
+> **A WSO2 Internship Portfolio Flagship Project**  
+> Enterprise-grade personal finance platform using WSO2 API Manager, WSO2 Identity Server, and WSO2 Integrator BI patterns
 
-![FinanceFlow](https://img.shields.io/badge/FinanceFlow-v1.0.0-blue)
-![PWA](https://img.shields.io/badge/PWA-Ready-green)
-![React](https://img.shields.io/badge/React-18.2-61DAFB)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6)
+---
 
-## ✨ Features
+## 🏆 Project Overview
 
-- 📊 **Dashboard** - Complete financial overview at a glance
-- 💵 **Income Tracking** - Track all your income sources
-- 💳 **Expense Management** - Categorize and monitor spending
-- 🏦 **Savings Goals** - Set and track savings targets
-- 📈 **Investments** - Portfolio tracking with market data
-- 💹 **Market Data** - CSE stocks, global markets, crypto prices
-- 🔮 **AI Predictions** - Price predictions with confidence scores
-- 💡 **Investment Advice** - Strategies tailored for Sri Lanka
-- 📱 **PWA** - Install on phone, works offline
-- 🌙 **Dark Mode** - Eye-friendly dark theme
-- 🇱🇰 **LKR Support** - Sri Lankan Rupee as default currency
+**FinAI Enterprise** is a full-stack, production-grade financial management SaaS platform that demonstrates every layer of enterprise software architecture:
+
+| Domain | Technology Used |
+|--------|----------------|
+| **API Management** | WSO2 API Manager (Gateway simulation) |
+| **Identity & Security** | WSO2 Identity Server (OAuth2/OIDC/JWT/RBAC) |
+| **AI Integration** | Google Gemini 2.0 Flash + RAG Pipeline |
+| **Backend** | Firebase (Auth + Firestore, system of record) · FastAPI (Python 3.11) AI layer |
+| **Database** | Firestore (offline-first) · PostgreSQL 16 for the AI/reporting layer (Express/MongoDB archived) |
+| **Frontend** | React 18 PWA (TypeScript + Tailwind CSS) |
+| **DevOps** | Docker Compose (8 services) |
+| **Monitoring** | Prometheus + Grafana |
+
+---
+
+## 💳 Transaction-centric model (Nov 2026 upgrade)
+
+Every financial event is an independent **transaction**: lunch today, a sudden vehicle repair, a freelance payment, a gift, a transfer between accounts. **Recurring rules** are optional templates that generate future transactions; editing a rule never rewrites history. The dashboard shows the **current month** by default, and a global period selector (today → year, custom, ← →) drives every screen.
+
+- Accounting model (single source of truth): [`client/src/lib/finance/aggregate.ts`](client/src/lib/finance/aggregate.ts). Transfers are never income or expense; savings and investments are not expenses; refunds reduce expenses.
+- New screens: Transactions, Cash Flow, Calendar, Accounts & Net Worth, Planning & Bills, plus Quick Add, Safe-to-Spend and month-end snapshots.
+- Existing data upgrades in-app (backup → analyse → upgrade → verified totals). Original records are never modified.
+- Full details: [`docs/UPGRADE_REPORT.md`](docs/UPGRADE_REPORT.md) · audit: [`docs/UPGRADE_AUDIT_PHASE1.md`](docs/UPGRADE_AUDIT_PHASE1.md)
+
+```bash
+npm ci && npm run dev        # app at http://localhost:3000/financeflow/
+npm test                     # 64 financial-logic unit tests
+npm run test:e2e             # Playwright end-to-end (see report §18)
+firebase deploy --only firestore:rules
+```
+
+---
+
+## ✨ Enterprise Features
+
+### 🤖 AI-Powered Features
+- **AI Financial Advisor** — Chat with Google Gemini 2.0 Flash using RAG (Retrieval-Augmented Generation) with your actual financial data as context
+- **ML Expense Predictions** — Linear regression forecasting of expenses for 3 months ahead with confidence intervals
+- **Financial Health Score** — 6-dimension scoring engine (0-100) with A+ to F grades
+- **Fraud Detection** — Statistical Z-Score anomaly detection per expense category
+- **Voice Assistant** — Web Speech API + NLP for hands-free transaction entry
+
+### 🛡️ Enterprise Security (WSO2 IS Pattern)
+- OAuth2 / OpenID Connect token flow
+- JWT access tokens (30min) + refresh tokens (30 days) + id_token (OIDC)
+- Role-Based Access Control: `normal_user`, `financial_advisor`, `admin`
+- Per-request JWT validation at the API Gateway layer
+
+### 🌐 WSO2 API Manager (Gateway)
+- Centralized entry point for all API traffic
+- Rate limiting: 100 req/min (default) / 20 req/min (AI) / 5 req/5min (reports)
+- Real-time API analytics dashboard
+- RBAC scope enforcement (advisor-only endpoints)
+- Request proxy routing to backend microservices
+
+### 📊 Financial Management
+- Income tracking (recurring, categories, sources)
+- Expense tracking with merchant, payment method, fraud flagging
+- Budget management with real-time overspend alerts
+- Savings goals with contribution tracking
+- Investment portfolio (stocks, crypto, FD, gold, mutual funds)
+
+### 📑 Enterprise Reports
+- PDF reports using ReportLab (professional enterprise formatting)
+- Excel reports using openpyxl (with multiple sheets)
+- CSV data exports
+
+### 👨‍👩‍👧‍👦 Multi-User Features
+- Financial Advisor portal (view assigned clients, monitor health)
+- Family group accounts (shared wallets)
+
+---
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- Node.js 18+ 
-- npm or yarn
-- Firebase account (for authentication & database)
-
-### Installation
+### Option 1: Docker (Recommended)
 
 ```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/financeflow.git
-cd financeflow
+# Clone repository
+git clone <repo> finai-enterprise
+cd finai-enterprise
 
-# Install dependencies
+# Configure API keys
+cp .env .env.local
+# Edit .env and add: GEMINI_API_KEY=your_key
+
+# Launch all 8 services
+docker-compose up -d
+
+# Open app
+open http://localhost:3000
+```
+
+**Services available after launch:**
+| Service | URL |
+|---------|-----|
+| 🖥️ Frontend (React PWA) | http://localhost:3000 |
+| 🌐 API Gateway | http://localhost:8080 |
+| 🤖 AI Backend (Swagger) | http://localhost:8000/docs |
+| 📊 Grafana | http://localhost:3001 |
+| 📡 Prometheus | http://localhost:9090 |
+| 🔌 Gateway Analytics | http://localhost:8080/gateway/analytics |
+
+### Option 2: Manual Development
+
+```bash
+# 1. Start PostgreSQL + Redis (Docker)
+docker run -d --name finai-pg -e POSTGRES_DB=finai_enterprise -e POSTGRES_USER=finai -e POSTGRES_PASSWORD=finai_secret -p 5432:5432 postgres:16-alpine
+docker run -d --name finai-redis -p 6379:6379 redis:7-alpine
+
+# 2. AI Backend
+cd ai-backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# 3. API Gateway
+cd gateway
+npm install && npm run dev  # Port 8080
+
+# 4. Frontend
 cd client
-npm install
-
-# Create environment file
-cp .env.example .env
-
-# Add your Firebase configuration to .env
-# Start development server
-npm run dev
+npm install && npm run dev   # Port 5173
 ```
 
-### Environment Variables
-
-Create a `.env` file in the `client` directory:
-
-```env
-VITE_FIREBASE_API_KEY=your_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-VITE_FIREBASE_APP_ID=your_app_id
-```
-
-## 📱 Install as PWA (Mobile App)
-
-### On Android
-
-1. Visit the deployed website in Chrome
-2. A prompt will appear to "Install FinanceFlow"
-3. Tap **"Install"**
-4. The app will be added to your home screen
-
-### On iPhone/iPad (iOS)
-
-1. Visit the deployed website in Safari
-2. Tap the **Share** button (square with arrow)
-3. Scroll down and tap **"Add to Home Screen"**
-4. Tap **"Add"** to confirm
-
-### On Desktop (Chrome/Edge)
-
-1. Visit the deployed website
-2. Click the install icon (⊕) in the address bar
-3. Click **"Install"**
-
-## 🌐 Deployment to GitHub Pages
-
-### Step 1: Create GitHub Repository
-
-1. Go to [GitHub](https://github.com) and sign in
-2. Click **"New"** to create a new repository
-3. Name it `financeflow` (or your preferred name)
-4. Select **"Public"** (required for free GitHub Pages)
-5. Click **"Create repository"**
-
-### Step 2: Push Code to GitHub
-
-Open terminal in the project folder and run:
-
-```bash
-# Initialize git (if not already done)
-git init
-
-# Add all files
-git add .
-
-# Commit
-git commit -m "Initial commit - FinanceFlow PWA"
-
-# Add remote origin (replace YOUR_USERNAME)
-git remote add origin https://github.com/YOUR_USERNAME/financeflow.git
-
-# Push to main branch
-git push -u origin main
-```
-
-### Step 3: Configure GitHub Secrets
-
-Your Firebase credentials need to be stored as secrets:
-
-1. Go to your repository on GitHub
-2. Click **Settings** → **Secrets and variables** → **Actions**
-3. Click **"New repository secret"** and add each:
-
-| Secret Name | Value |
-|-------------|-------|
-| `VITE_FIREBASE_API_KEY` | Your Firebase API Key |
-| `VITE_FIREBASE_AUTH_DOMAIN` | your-project.firebaseapp.com |
-| `VITE_FIREBASE_PROJECT_ID` | your-project-id |
-| `VITE_FIREBASE_STORAGE_BUCKET` | your-project.appspot.com |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Your Sender ID |
-| `VITE_FIREBASE_APP_ID` | Your App ID |
-
-### Step 4: Enable GitHub Pages
-
-1. Go to repository **Settings** → **Pages**
-2. Under "Build and deployment":
-   - Source: Select **"GitHub Actions"**
-3. The deployment will run automatically when you push to main
-
-### Step 5: Access Your App
-
-After the deployment completes (2-3 minutes), your app will be live at:
-
-```
-https://YOUR_USERNAME.github.io/financeflow/
-```
-
-## 🔄 Updating the App
-
-Simply push new changes to the main branch:
-
-```bash
-git add .
-git commit -m "Your update message"
-git push
-```
-
-GitHub Actions will automatically rebuild and deploy.
-
-## 🛠️ Tech Stack
-
-| Technology | Purpose |
-|------------|---------|
-| React 18 | UI Framework |
-| TypeScript | Type Safety |
-| Vite | Build Tool |
-| Tailwind CSS | Styling |
-| Firebase | Auth & Database |
-| Zustand | State Management |
-| Vite PWA | Progressive Web App |
-| Workbox | Service Worker |
-| Recharts | Charts |
-| Heroicons | Icons |
+---
 
 ## 📁 Project Structure
 
 ```
-financeflow/
-├── client/
-│   ├── public/
-│   │   ├── pwa-192x192.png      # App icon (192x192)
-│   │   ├── pwa-512x512.png      # App icon (512x512)
-│   │   └── favicon.svg          # Browser favicon
-│   ├── src/
-│   │   ├── components/          # React components
-│   │   │   ├── dashboard/
-│   │   │   ├── market/
-│   │   │   ├── auth/
-│   │   │   └── ...
-│   │   ├── layouts/             # Page layouts
-│   │   ├── services/            # Firebase services
-│   │   ├── store/               # Zustand stores
-│   │   ├── App.tsx              # Main app component
-│   │   └── main.tsx             # Entry point
-│   ├── index.html
-│   ├── vite.config.ts           # Vite + PWA config
-│   └── package.json
-├── .github/
-│   └── workflows/
-│       └── deploy.yml           # GitHub Actions deploy
-├── .gitignore
-└── README.md
+finai-enterprise/
+├── client/                     # React 18 PWA (TypeScript)
+│   └── src/
+│       ├── components/
+│       │   ├── ai/             # 🤖 AI Advisor Chat
+│       │   ├── advisor/        # 👔 Financial Advisor Portal
+│       │   ├── enterprise/     # 🏗️ WSO2 Architecture Visualization
+│       │   ├── family/         # 👨‍👩‍👧‍👦 Family Accounts
+│       │   ├── health/         # ❤️ Financial Health Score
+│       │   ├── reports/        # 📑 Report Center
+│       │   └── voice/          # 🎙️ Voice Assistant
+│       └── store/
+│           ├── authStore.ts    # Legacy Firebase auth
+│           └── enterpriseStore.ts  # NEW: JWT/OIDC store
+│
+├── gateway/                    # WSO2 API Manager Simulation (Node.js)
+│   └── src/index.js            # JWT + rate limiting + proxy
+│
+├── ai-backend/                 # FastAPI AI Backend (Python 3.11)
+│   ├── routers/
+│   │   ├── auth.py             # OAuth2/OIDC endpoints
+│   │   ├── ai_advisor.py       # Gemini RAG pipeline
+│   │   ├── health_score.py     # Financial health engine
+│   │   ├── predictions.py      # ML forecasting
+│   │   ├── fraud.py            # Anomaly detection
+│   │   ├── voice.py            # NLP intent extraction
+│   │   ├── reports.py          # PDF/Excel generation
+│   │   └── _all_routers.py     # CRUD routers
+│   └── services/
+│       ├── llm_service.py      # Gemini + OpenAI integration
+│       └── report_generator.py # ReportLab + openpyxl
+│
+├── server/                     # Legacy Node.js/Express backend
+├── monitoring/                 # Prometheus + Grafana config
+├── docs/                       # Architecture + developer docs
+├── docker-compose.yml          # 8-service orchestration
+└── .env                        # Master configuration
 ```
-
-## 📊 Market Pages
-
-### CSE Market (`/market`)
-- Colombo Stock Exchange indices
-- Top 10 stocks with P/E ratios
-- Stock price predictions
-- Sri Lankan bank interest rates
-- Investment strategies for CSE
-
-### Global Markets (`/global-markets`)
-- S&P 500, FTSE, Nikkei, Sensex
-- Currency exchange rates (vs LKR)
-- Commodity prices (Gold, Oil)
-- Global market predictions
-- International investment strategies
-
-### Crypto Market (`/crypto`)
-- Top 10 cryptocurrencies
-- Prices in USD and LKR
-- Price predictions (1W, 1M, 3M)
-- Fear & Greed index
-- Crypto investment advice
-
-## 🔒 Security
-
-- ✅ Firebase Authentication (Google Sign-in)
-- ✅ Environment variables for sensitive data
-- ✅ HTTPS enforced on GitHub Pages
-- ✅ Service Worker for secure caching
-- ✅ No sensitive data in client-side code
-
-## 🐛 Troubleshooting
-
-### Build fails on GitHub Actions
-
-1. Check if all secrets are correctly added
-2. Verify secret names match exactly (case-sensitive)
-3. Check Actions tab for error logs
-
-### PWA not installing
-
-1. Site must be served over HTTPS
-2. Clear browser cache and try again
-3. Check if service worker is registered (DevTools → Application)
-
-### App shows old content
-
-1. Hard refresh: Ctrl/Cmd + Shift + R
-2. Clear site data in DevTools → Application → Storage → Clear site data
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-## 🙏 Acknowledgments
-
-- [Vite](https://vitejs.dev/) - Next Generation Frontend Tooling
-- [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS
-- [Firebase](https://firebase.google.com/) - Backend as a Service
-- [Heroicons](https://heroicons.com/) - Beautiful hand-crafted SVG icons
 
 ---
 
-<p align="center">
-  Made by Ravindu Vinusha
-  <br>
-  <a href="https://github.com/YOUR_USERNAME/financeflow">⭐ Star this repo</a>
-</p>
+## 🌐 API Endpoints
+
+Full documentation at: `http://localhost:8000/docs`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/auth/register` | Register new user |
+| `POST` | `/api/v1/auth/login` | Get JWT tokens |
+| `POST` | `/api/v1/ai/chat` | Chat with AI advisor |
+| `GET`  | `/api/v1/health-score/calculate` | Calculate health score |
+| `GET`  | `/api/v1/fraud/scan` | Scan for anomalies |
+| `GET`  | `/api/v1/predictions/expenses` | ML expense forecast |
+| `POST` | `/api/v1/voice/process` | Process voice command |
+| `POST` | `/api/v1/reports/generate` | Generate PDF/Excel |
+| `GET`  | `/api/v1/advisor/clients` | Advisor: view clients |
+
+---
+
+## 🔐 Security
+
+- All API calls validated via JWT at Gateway layer
+- Passwords hashed with bcrypt (12 rounds)
+- SQL injection prevented by SQLAlchemy ORM
+- Input validated by Pydantic schemas
+- Rate limiting prevents abuse
+- CORS configured to whitelist only frontend origins
+- Audit logging for all data modifications
+
+---
+
+## 🧪 Test Credentials
+
+After running, register a user at `http://localhost:3000/register`:
+- **Normal User:** Any email/password
+- **Financial Advisor:** Select "Financial Advisor" role during registration
+
+---
+
+## 📊 WSO2 Demonstrating Skills
+
+This project demonstrates the following WSO2-relevant skills:
+
+| WSO2 Product | Demonstrated |
+|---|---|
+| WSO2 API Manager | API gateway, rate limiting, analytics, OAuth2 enforcement |
+| WSO2 Identity Server | OAuth2/OIDC, JWT, RBAC, role management |
+| WSO2 Integrator BI | AI workflow automation, report generation, data integration |
+| WSO2 Micro Integrator | Service composition (income, expense, investment services) |
+| Enterprise Integration | Multiple backend service orchestration |
+| API Security | Token validation, scope-based access control |
+
+---
+
+## 📈 Technology Stack
+
+```
+Frontend:   React 18 · TypeScript · Vite · Tailwind CSS · Zustand · Recharts
+Gateway:    Node.js · Express · JWT · Rate Limiting · http-proxy-middleware
+Backend:    FastAPI · Python 3.11 · SQLAlchemy 2.0 async · Pydantic v2
+AI/ML:      Google Gemini 2.0 Flash · OpenAI GPT-4o-mini · NumPy · scikit-learn
+NLP:        Custom regex-based intent extraction
+Reports:    ReportLab (PDF) · openpyxl (Excel)
+Database:   PostgreSQL 16 · asyncpg · Redis 7
+DevOps:     Docker · Docker Compose · Prometheus · Grafana
+Auth:       JWT/OIDC (WSO2 IS pattern) · bcrypt · python-jose
+```
+
+---
+
+*Built as a WSO2 Internship Portfolio Project — Ravindu VS*

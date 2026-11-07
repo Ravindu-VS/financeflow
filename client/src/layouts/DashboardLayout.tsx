@@ -1,6 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
+import { useFinanceStore } from '../store/financeStore'
+import { auth } from '../config/firebase'
+import QuickAdd from '../components/finance/QuickAdd'
+import TransactionForm from '../components/finance/TransactionForm'
 import { useThemeStore } from '../store/themeStore'
 import {
   HomeIcon,
@@ -20,35 +24,92 @@ import {
   BellIcon,
   WalletIcon,
   GlobeAltIcon,
-  CurrencyDollarIcon
+  CurrencyDollarIcon,
+  ListBulletIcon,
+  ArrowsRightLeftIcon,
+  CalendarDaysIcon,
+  BuildingLibraryIcon as BankIcon,
+  ClipboardDocumentListIcon,
+  DocumentChartBarIcon,
+  EllipsisHorizontalIcon
 } from '@heroicons/react/24/outline'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
+  { name: 'Transactions', href: '/transactions', icon: ListBulletIcon },
   { name: 'Income', href: '/income', icon: BanknotesIcon },
   { name: 'Expenses', href: '/expenses', icon: CreditCardIcon },
-  { name: 'Savings', href: '/savings', icon: WalletIcon },
-  { name: 'Investments', href: '/investments', icon: ChartBarIcon },
+  { name: 'Cash Flow', href: '/cashflow', icon: ArrowsRightLeftIcon },
+  { name: 'Calendar', href: '/calendar', icon: CalendarDaysIcon },
+  { name: 'Accounts & Net Worth', href: '/accounts', icon: BankIcon },
   { name: 'Budgets', href: '/budgets', icon: ChartPieIcon },
+  { name: 'Planning & Bills', href: '/planning', icon: ClipboardDocumentListIcon },
+  { name: 'Savings Goals', href: '/savings', icon: WalletIcon },
+  { name: 'Investments', href: '/investments', icon: ChartBarIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
-  { name: 'AI Insights', href: '/insights', icon: LightBulbIcon },
+  { name: 'Insights', href: '/insights', icon: LightBulbIcon },
+  { name: 'Reports', href: '/reports', icon: DocumentChartBarIcon },
   { name: 'CSE Market', href: '/market', icon: BuildingLibraryIcon },
   { name: 'Global Markets', href: '/global-markets', icon: GlobeAltIcon },
   { name: 'Crypto', href: '/crypto', icon: CurrencyDollarIcon },
 ]
+
+// ── Enterprise AI Navigation ──────────────────────────────────────────────────
+const enterpriseNavigation = [
+  { name: '🤖 AI Advisor', href: '/ai-advisor', icon: LightBulbIcon, badge: 'NEW' },
+  { name: '🎙️ Voice', href: '/voice', icon: LightBulbIcon, badge: 'NEW' },
+  { name: '❤️ Health Score', href: '/health-score', icon: ChartPieIcon, badge: 'NEW' },
+  { name: '🏗️ Architecture', href: '/architecture', icon: GlobeAltIcon, badge: 'NEW' },
+  { name: '👔 Advisor Portal', href: '/advisor', icon: UserCircleIcon, badge: 'NEW' },
+  { name: '👨‍👩‍👧‍👦 Family', href: '/family', icon: HomeIcon, badge: 'NEW' },
+]
+
+// Mobile bottom navigation (large touch targets); Quick Add floats above it
+const mobileTabs = [
+  { name: 'Home', href: '/dashboard', icon: HomeIcon },
+  { name: 'Activity', href: '/transactions', icon: ListBulletIcon },
+  { name: 'Budgets', href: '/budgets', icon: ChartPieIcon },
+  { name: 'Insights', href: '/insights', icon: LightBulbIcon },
+]
+
+function SyncStatus() {
+  const { pendingWrites } = useFinanceStore()
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false)
+    window.addEventListener('online', on); window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  if (online && !pendingWrites) return null
+  return (
+    <span className={`text-xs px-2 py-1 rounded-full ${online ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+      {online ? `Syncing ${pendingWrites}…` : `Offline${pendingWrites ? ` · ${pendingWrites} to sync` : ' · entries will sync later'}`}
+    </span>
+  )
+}
 
 const bottomNavigation = [
   { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },
   { name: 'Profile', href: '/profile', icon: UserCircleIcon },
 ]
 
+
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user, logout } = useAuthStore()
   const { theme, toggleTheme } = useThemeStore()
   const navigate = useNavigate()
+  const initFinance = useFinanceStore(s => s.init)
+  const stopFinance = useFinanceStore(s => s.stop)
+
+  // Start live, offline-capable data subscriptions for the signed-in user
+  useEffect(() => {
+    const uid = auth.currentUser?.uid || user?.id
+    if (uid) initFinance(uid)
+  }, [user?.id, initFinance])
 
   const handleLogout = () => {
+    stopFinance()
     logout()
     navigate('/login')
   }
@@ -112,6 +173,33 @@ export default function DashboardLayout() {
               </NavLink>
             ))}
 
+            {/* ── Enterprise AI Section ── */}
+            <div className="pt-3 mt-3 border-t border-gray-200 dark:border-gray-700">
+              <div className="px-3 py-1.5 mb-1">
+                <span className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-indigo-500 uppercase tracking-wider">Enterprise AI</span>
+              </div>
+              {enterpriseNavigation.map((item) => (
+                <NavLink
+                  key={item.name}
+                  to={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                    }`
+                  }
+                >
+                  <span className="text-base">{item.name.split(' ')[0]}</span>
+                  <span className="flex-1">{item.name.split(' ').slice(1).join(' ')}</span>
+                  {item.badge && (
+                    <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded-full font-semibold">{item.badge}</span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+
             <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
               {bottomNavigation.map((item) => (
                 <NavLink
@@ -170,8 +258,8 @@ export default function DashboardLayout() {
             <Bars3Icon className="w-6 h-6" />
           </button>
 
-          <div className="flex-1 lg:flex-none">
-            {/* Search - hidden on mobile for now */}
+          <div className="flex-1 lg:flex-none flex items-center gap-2 px-2">
+            <SyncStatus />
           </div>
 
           <div className="flex items-center gap-2">
@@ -208,6 +296,21 @@ export default function DashboardLayout() {
         <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-4 lg:p-6">
           <Outlet />
         </main>
+
+        {/* Mobile bottom navigation */}
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around pb-[env(safe-area-inset-bottom)]">
+          {mobileTabs.map(t => (
+            <NavLink key={t.href} to={t.href} className={({ isActive }) => `flex flex-col items-center justify-center min-h-[56px] min-w-[64px] text-[11px] ${isActive ? 'text-primary-600' : 'text-gray-500 dark:text-gray-400'}`}>
+              <t.icon className="w-6 h-6" />{t.name}
+            </NavLink>
+          ))}
+          <button onClick={() => setSidebarOpen(true)} className="flex flex-col items-center justify-center min-h-[56px] min-w-[64px] text-[11px] text-gray-500 dark:text-gray-400">
+            <EllipsisHorizontalIcon className="w-6 h-6" />More
+          </button>
+        </nav>
+
+        <QuickAdd />
+        <TransactionForm />
       </div>
     </div>
   )

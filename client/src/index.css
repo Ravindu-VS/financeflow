@@ -176,9 +176,11 @@ body {
 
 /* Print styles */
 @media print {
-  .no-print {
+  .no-print, aside, header, nav, .fixed {
     display: none !important;
   }
+  main { overflow: visible !important; padding: 0 !important; }
+  body, html, #root, .h-screen { height: auto !important; overflow: visible !important; background: #fff !important; }
 }
 
 /* PWA Install Prompt Animation */

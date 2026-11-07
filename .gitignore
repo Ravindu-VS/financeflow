@@ -41,3 +41,8 @@ dev-dist/
 # Firebase
 .firebase/
 firebase-debug.log
+
+# test artifacts
+client/test-results/
+client/playwright-report/
+client/dev-dist/

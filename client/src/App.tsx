@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast'
 import { useEffect, Suspense, lazy } from 'react'
 import { useAuthStore } from './store/authStore'
 import { useThemeStore } from './store/themeStore'
+import { useEnterpriseStore } from './store/enterpriseStore'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
 
 // Layouts (load immediately)
@@ -26,6 +27,22 @@ const ProfilePage = lazy(() => import('./components/profile/ProfilePage'))
 const LoginPage = lazy(() => import('./components/auth/LoginPage'))
 const RegisterPage = lazy(() => import('./components/auth/RegisterPage'))
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'))
+
+// ── Transaction-centric pages ────────────────────────────────────────────────
+const TransactionsPage = lazy(() => import('./components/transactions/TransactionsPage'))
+const CashFlowPage = lazy(() => import('./components/cashflow/CashFlowPage'))
+const CalendarPage = lazy(() => import('./components/calendar/CalendarPage'))
+const AccountsPage = lazy(() => import('./components/accounts/AccountsPage'))
+const PlanningPage = lazy(() => import('./components/recurring/PlanningPage'))
+
+// ── Enterprise Pages (NEW) ───────────────────────────────────────────────────
+const AIChatPage = lazy(() => import('./components/ai/AIChatPage'))
+const VoiceAssistantPage = lazy(() => import('./components/voice/VoiceAssistant'))
+const WSO2ArchitecturePage = lazy(() => import('./components/enterprise/WSO2ArchitecturePage'))
+const ReportCenterPage = lazy(() => import('./components/reports/ReportCenter'))
+const FinancialHealthPage = lazy(() => import('./components/health/FinancialHealthPage'))
+const AdvisorPortalPage = lazy(() => import('./components/advisor/AdvisorPortal'))
+const FamilyAccountsPage = lazy(() => import('./components/family/FamilyAccounts'))
 
 // Loading spinner component
 const PageLoader = () => (
@@ -127,6 +144,12 @@ function App() {
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/transactions" element={<TransactionsPage />} />
+            <Route path="/cashflow" element={<CashFlowPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
+            <Route path="/accounts" element={<AccountsPage />} />
+            <Route path="/planning" element={<PlanningPage />} />
+            <Route path="/recurring" element={<Navigate to="/planning" replace />} />
             <Route path="/income" element={<IncomePage />} />
             <Route path="/expenses" element={<ExpensesPage />} />
             <Route path="/savings" element={<SavingsPage />} />
@@ -139,6 +162,14 @@ function App() {
             <Route path="/crypto" element={<CryptoMarketPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            {/* ── Enterprise Routes (NEW) ── */}
+            <Route path="/ai-advisor" element={<AIChatPage />} />
+            <Route path="/voice" element={<VoiceAssistantPage />} />
+            <Route path="/architecture" element={<WSO2ArchitecturePage />} />
+            <Route path="/reports" element={<ReportCenterPage />} />
+            <Route path="/health-score" element={<FinancialHealthPage />} />
+            <Route path="/advisor" element={<AdvisorPortalPage />} />
+            <Route path="/family" element={<FamilyAccountsPage />} />
           </Route>
 
           {/* Redirect root to dashboard or login */}

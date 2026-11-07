@@ -4,15 +4,16 @@
   "description": "Smart Personal Finance & Wealth Intelligence Platform",
   "private": true,
   "workspaces": [
-    "client",
-    "server"
+    "client"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "server": "cd server && npm run dev",
-    "client": "cd client && npm run dev",
-    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
-    "build": "cd client && npm run build"
+    "dev": "npm --workspace client run dev",
+    "build": "npm --workspace client run build",
+    "test": "npm --workspace client run test",
+    "test:e2e": "npm --workspace client run test:e2e",
+    "typecheck": "npm --workspace client run typecheck",
+    "ai:dev": "cd ai-backend && uvicorn main:app --reload --port 8000",
+    "gateway:dev": "cd gateway && npm start"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

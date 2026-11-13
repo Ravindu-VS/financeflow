@@ -6,6 +6,8 @@ import { useThemeStore } from './store/themeStore'
 import { useEnterpriseStore } from './store/enterpriseStore'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
 
+const routerBase = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined
+
 // Layouts (load immediately)
 import AuthLayout from './layouts/AuthLayout'
 import DashboardLayout from './layouts/DashboardLayout'
@@ -110,7 +112,7 @@ function App() {
   }, [theme])
 
   return (
-    <BrowserRouter basename="/financeflow">
+    <BrowserRouter basename={routerBase}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
         <Suspense fallback={<PageLoader />}>
           <Routes>

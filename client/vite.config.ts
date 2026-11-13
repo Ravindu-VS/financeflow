@@ -31,11 +31,23 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Heavy on-demand libraries (Excel/PDF export, OCR) are cached when first used, not at install
+        globIgnores: ['**/exceljs*.js', '**/jspdf*.js', '**/html2canvas*.js', '**/purify*.js', '**/index.es-*.js', '**/tesseract*.js'],
         navigateFallback: '/financeflow/index.html',
         navigateFallbackDenylist: [/^\/financeflow\/__/],
         skipWaiting: true,
         clientsClaim: true,
         runtimeCaching: [
+          {
+            urlPattern: /\/assets\/(exceljs|jspdf|html2canvas|purify|index\.es|tesseract)[^/]*\.js$/i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'lazy-libs', expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 60 } },
+          },
+          {
+            urlPattern: /^https:\/\/(cdn\.jsdelivr\.net|unpkg\.com|tessdata\.projectnaptha\.com)\//i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'ocr-engine', expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 60 }, cacheableResponse: { statuses: [0, 200] } },
+          },
           {
             urlPattern: /^https:\/\/api\./i,
             handler: 'NetworkFirst',

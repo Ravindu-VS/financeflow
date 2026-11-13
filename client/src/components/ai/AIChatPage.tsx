@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { apiClient } from '../../store/enterpriseStore'
-import { useEnterpriseStore, useAuthStore as useEnterpriseAuth } from '../../store/enterpriseStore'
+import { apiClient, useEnterpriseStore } from '../../store/enterpriseStore'
+import { geminiDirect, GROUNDING_PROMPT } from '../../services/backend'
 import { useFinanceStore } from '../../store/financeStore'
 import { usePeriodData } from '../../hooks/useFinance'
 import { buildFinancialContext, answerLocally } from '../../lib/finance'
@@ -12,6 +12,7 @@ interface Message {
   suggestions?: string[]
   insight_type?: string
   confidence?: number
+  model?: string
   timestamp: Date
 }
 
@@ -73,39 +74,37 @@ export default function AIChatPage() {
     const updatedHistory = [...conversationHistory, { role: 'user', content: messageText }]
 
     const context = getContext()
-    try {
-      // Without a gateway session or connection, answer on-device from real data.
-      if (!useEnterpriseAuth.getState().accessToken || !navigator.onLine) throw new Error('offline')
-      const { data } = await apiClient.post('/api/v1/ai/chat', {
-        message: messageText,
-        conversation_history: updatedHistory,
-        // Grounding: actual figures computed client-side from the user's transactions
-        financial_context: context,
-      }, { timeout: 20000 })
-
+    const push = (r: { response: string; suggestions?: string[]; insight_type?: string; confidence?: number; model?: string }) => {
       const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.response,
-        suggestions: data.suggestions || [],
-        insight_type: data.insight_type,
-        confidence: data.confidence,
-        timestamp: new Date()
+        id: (Date.now() + 1).toString(), role: 'assistant', content: r.response,
+        suggestions: r.suggestions?.length ? r.suggestions : QUICK_QUESTIONS.filter(q => q !== messageText).slice(0, 3),
+        insight_type: r.insight_type || 'general', confidence: r.confidence, model: r.model, timestamp: new Date(),
       }
-
       setMessages(prev => [...prev, aiMsg])
-      setConversationHistory([...updatedHistory, { role: 'assistant', content: data.response }])
-    } catch (err: any) {
-      const local: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: answerLocally(messageText, context),
-        suggestions: QUICK_QUESTIONS.filter(q => q !== messageText).slice(0, 3),
-        insight_type: 'spending_analysis',
-        timestamp: new Date()
+      setConversationHistory([...updatedHistory, { role: 'assistant', content: r.response }])
+    }
+    try {
+      if (!navigator.onLine) throw new Error('offline')
+      // 1) Hosted Gemini through the API gateway → FastAPI backend (grounded on your real numbers)
+      let reply: any = null
+      try {
+        const { data } = await apiClient.post('/api/v1/ai/chat', {
+          message: messageText,
+          conversation_history: updatedHistory.slice(-10),
+          financial_context: context,
+        }, { timeout: 30000 })
+        if (data?.response && data.model_used !== 'unavailable') reply = { ...data, model: data.model_used }
+      } catch { /* fall through */ }
+      // 2) Your own key, straight to Gemini (optional)
+      if (!reply && fin.settings.geminiApiKey) {
+        reply = await geminiDirect(fin.settings.geminiApiKey, fin.settings.geminiModel || 'gemini-2.5-flash',
+          GROUNDING_PROMPT + '\nUSER FINANCIAL DATA (JSON):\n' + JSON.stringify(context).slice(0, 24000), updatedHistory.slice(-10), messageText)
       }
-      setMessages(prev => [...prev, local])
-      setConversationHistory([...updatedHistory, { role: 'assistant', content: local.content }])
+      if (!reply) throw new Error('no-llm')
+      push(reply)
+    } catch {
+      // 3) On-device answer from the same numbers
+      push({ response: answerLocally(messageText, context), insight_type: 'spending_analysis', model: 'on-device' })
     } finally {
       setIsLoading(false)
       inputRef.current?.focus()
@@ -185,7 +184,7 @@ export default function AIChatPage() {
               {msg.insight_type && msg.role === 'assistant' && (
                 <div className={`text-xs px-3 py-1 rounded-full bg-gradient-to-r ${insightColors[msg.insight_type] || insightColors.general} text-white font-medium inline-flex items-center gap-1`}>
                   {insightIcons[msg.insight_type]} {msg.insight_type.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                  {msg.confidence && <span className="opacity-75">· {Math.round(msg.confidence * 100)}% confidence</span>}
+                  {msg.confidence ? <span className="opacity-75">· {Math.round(msg.confidence * 100)}% confidence</span> : null}{msg.model && <span className="opacity-75"> · {msg.model === "on-device" ? "on-device answer" : msg.model}</span>}
                 </div>
               )}
               

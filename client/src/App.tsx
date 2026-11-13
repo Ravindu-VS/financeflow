@@ -38,7 +38,6 @@ const PlanningPage = lazy(() => import('./components/recurring/PlanningPage'))
 // ── Enterprise Pages (NEW) ───────────────────────────────────────────────────
 const AIChatPage = lazy(() => import('./components/ai/AIChatPage'))
 const VoiceAssistantPage = lazy(() => import('./components/voice/VoiceAssistant'))
-const WSO2ArchitecturePage = lazy(() => import('./components/enterprise/WSO2ArchitecturePage'))
 const ReportCenterPage = lazy(() => import('./components/reports/ReportCenter'))
 const FinancialHealthPage = lazy(() => import('./components/health/FinancialHealthPage'))
 const AdvisorPortalPage = lazy(() => import('./components/advisor/AdvisorPortal'))
@@ -165,7 +164,8 @@ function App() {
             {/* ── Enterprise Routes (NEW) ── */}
             <Route path="/ai-advisor" element={<AIChatPage />} />
             <Route path="/voice" element={<VoiceAssistantPage />} />
-            <Route path="/architecture" element={<WSO2ArchitecturePage />} />
+            {/* Architecture/service-health page removed (developer-only); old links go to the dashboard */}
+            <Route path="/architecture" element={<Navigate to="/dashboard" replace />} />
             <Route path="/reports" element={<ReportCenterPage />} />
             <Route path="/health-score" element={<FinancialHealthPage />} />
             <Route path="/advisor" element={<AdvisorPortalPage />} />

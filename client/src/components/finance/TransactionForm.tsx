@@ -5,10 +5,13 @@ import { useQuickAdd, type QuickAddMode } from '../../store/quickAddStore'
 import { useFinanceStore } from '../../store/financeStore'
 import { saveTransaction, updateTransaction, nextDates } from '../../services/transactionActions'
 import { recurringService } from '../../services/financeService'
+import { scanReceipt } from '../../services/ocr'
 import {
   categoriesForType, todayKey, addDays, validateTransaction, findDuplicates, FREQUENCIES, isEssentialCategory,
-  formatDateKey, type TransactionType, type Frequency, type ExpenseKind,
+  formatDateKey, kindForType, makeCustomCategory, registerCustomCategories, CURRENCY_LIST,
+  type TransactionType, type Frequency, type ExpenseKind,
 } from '../../lib/finance'
+import { settingsService } from '../../services/financeService'
 import { formatCurrency } from '../../utils/currency'
 
 const MODES: { value: QuickAddMode; label: string; color: string }[] = [
@@ -41,7 +44,9 @@ async function compressImage(file: File, max = 1024, quality = 0.6): Promise<str
 
 export default function TransactionForm() {
   const { isOpen, mode: initialMode, prefill, editing, close } = useQuickAdd()
-  const { accounts, goals, holdings, transactions } = useFinanceStore()
+  const { accounts, goals, holdings, transactions, settings } = useFinanceStore()
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customText, setCustomText] = useState('')
   const [mode, setMode] = useState<QuickAddMode>('expense')
   const [f, setF] = useState<any>({})
   const [more, setMore] = useState(false)
@@ -49,6 +54,35 @@ export default function TransactionForm() {
   const [rep, setRep] = useState<{ frequency: Frequency; interval: number; customUnit: 'day' | 'week' | 'month' | 'year'; endDate: string; autoGenerate: boolean; variableAmount: boolean }>({ frequency: 'monthly', interval: 1, customUnit: 'month', endDate: '', autoGenerate: true, variableAmount: false })
   const [dupeAck, setDupeAck] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [scan, setScan] = useState<{ busy: boolean; pct: number; note?: string }>({ busy: false, pct: 0 })
+
+  const onReceipt = async (file: File | undefined) => {
+    if (!file) return
+    if (file.size > 15 * 1024 * 1024) return toast.error('Image too large')
+    setScan({ busy: true, pct: 0 })
+    try {
+      const url = await compressImage(file).catch(() => '')
+      if (url && url.length <= 700_000) set('receiptUrl', url)
+      const r = await scanReceipt(file, pct => setScan(s => ({ ...s, pct })))
+      setF((p: any) => ({
+        ...p,
+        amount: r.amount != null ? String(r.amount) : p.amount,
+        date: r.date || p.date,
+        merchant: r.merchant || p.merchant,
+        description: p.description || r.merchant || '',
+        category: r.category || p.category,
+        notes: p.notes || (r.items.length ? r.items.map(i => `${i.name} ${i.amount}`).join('; ').slice(0, 400) : ''),
+        source: p.source === 'manual' ? 'ai' : p.source,
+      }))
+      setMore(true)
+      const note = `Read with ${Math.round(r.confidence * 100)}% confidence — please check before saving.${r.warnings.length ? ' ' + r.warnings.join(' ') : ''}`
+      setScan({ busy: false, pct: 100, note })
+      if (r.amount == null) toast.error('Could not read the total — enter it manually')
+      else toast.success('Receipt read — review and save')
+    } catch (e: any) {
+      setScan({ busy: false, pct: 0, note: navigator.onLine ? 'Could not read this receipt. Try a sharper, well-lit photo.' : 'Receipt scanning needs a connection the first time (to download the OCR model).' })
+    }
+  }
   const amountRef = useRef<HTMLInputElement>(null)
 
   const spendable = accounts.filter(a => !a.archived && ['cash', 'bank', 'debit_card', 'ewallet', 'credit_card'].includes(a.type))
@@ -61,7 +95,8 @@ export default function TransactionForm() {
     const base = editing || prefill || {}
     const type: TransactionType = m === 'bill' ? 'expense' : (m as TransactionType)
     setF({
-      amount: base.amount ?? '', date: base.date || todayKey(), time: base.time || '',
+      amount: (base as any).originalAmount ?? base.amount ?? '', date: base.date || todayKey(), time: base.time || '',
+      currency: base.currency || settings.baseCurrency || 'LKR', fxRate: base.fxRate ? String(base.fxRate) : '',
       category: base.category || categoriesForType(type)[0]?.id, subcategory: base.subcategory || '',
       description: base.description || '', merchant: base.merchant || '', accountId: base.accountId || defaultAccount,
       toAccountId: base.toAccountId || '', paymentMethod: base.paymentMethod || '', tags: (base.tags || []).join(', '),
@@ -71,6 +106,7 @@ export default function TransactionForm() {
     setRepeat(m === 'bill'); setMore(!!editing && !!(editing.notes || editing.merchant || editing.tags?.length))
     setRep(r => ({ ...r, autoGenerate: m !== 'bill' }))
     setDupeAck(false)
+    setCustomOpen(false); setCustomText('')
     setTimeout(() => amountRef.current?.focus(), 150)
   }, [isOpen, initialMode, prefill, editing])
 
@@ -78,15 +114,35 @@ export default function TransactionForm() {
   const cats = categoriesForType(type)
   const set = (k: string, v: any) => { setF((p: any) => ({ ...p, [k]: v })); setDupeAck(false) }
 
+  /** "Other → type your own": create (or reuse) a custom category and remember it for next time. */
+  const addCustomCategory = async (): Promise<string | null> => {
+    const text = customText.trim()
+    const kind = kindForType(type)
+    if (!text || !kind) return null
+    const existing = settings.customCategories || []
+    const cat = makeCustomCategory(text, kind, existing)
+    if (!existing.some(c => c.id === cat.id) && cat.id.match(/^(cus|inc|inv)_/)) {
+      const next = [...existing, cat]
+      registerCustomCategories(next) // show immediately, even offline
+      settingsService.save({ customCategories: next }).catch(e => toast.error(`Could not save category: ${e.message}`))
+    }
+    set('category', cat.id)
+    setCustomOpen(false); setCustomText('')
+    return cat.id
+  }
+
   const typicalMax = useMemo(() => {
     const xs = transactions.filter(t => t.type === type).map(t => t.amount).sort((a, b) => a - b)
     return xs.length >= 10 ? xs[Math.floor(xs.length * 0.9)] : undefined
   }, [transactions, type])
 
+  const baseCur = settings.baseCurrency || 'LKR'
+  const foreign = !!f.currency && f.currency !== baseCur
   const draft = () => {
     const amount = Math.abs(parseFloat(String(f.amount).replace(/,/g, '')))
     return {
-      type, amount: type === 'adjustment' && f.adjustSign === '-' ? -amount : amount, currency: 'LKR', date: f.date, time: f.time || undefined,
+      type, amount: type === 'adjustment' && f.adjustSign === '-' ? -amount : amount, currency: f.currency || baseCur,
+      fxRate: foreign ? (parseFloat(f.fxRate) || undefined) : undefined, date: f.date, time: f.time || undefined,
       category: f.category, subcategory: f.subcategory || undefined, description: f.description.trim() || undefined,
       merchant: f.merchant.trim() || undefined, accountId: f.accountId || undefined,
       toAccountId: ['transfer', 'savings_contribution', 'savings_withdrawal'].includes(type) ? (f.toAccountId || undefined) : undefined,
@@ -106,6 +162,11 @@ export default function TransactionForm() {
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault()
+    // A typed-but-not-added custom category is applied automatically
+    if (customOpen && customText.trim()) {
+      const id = await addCustomCategory()
+      if (id) f.category = id
+    }
     if (errors.length) { toast.error(errors[0].message); return }
     if (dupes.length && !dupeAck) { setDupeAck(true); toast('This looks like a duplicate — tap Save again to confirm', { icon: '⚠️' }); return }
     setSaving(true)
@@ -133,12 +194,14 @@ export default function TransactionForm() {
       }
       close()
     } catch (err: any) {
+      if (err?.name === 'EditConflictError') { toast.error(err.message, { duration: 6000 }); close(); return }
       console.error(err)
       toast.error(err.message || 'Failed to save')
     } finally { setSaving(false) }
   }
 
-  if (!isOpen) return null
+  // wait for the form state to be initialised (avoids uncontrolled→controlled inputs on first open)
+  if (!isOpen || f.date === undefined) return null
   const preview = repeat ? nextDates({ frequency: rep.frequency, interval: rep.interval, customUnit: rep.customUnit, startDate: f.date, endDate: rep.endDate || undefined }, 3, f.date) : []
 
   return (
@@ -159,6 +222,16 @@ export default function TransactionForm() {
           </div>
         )}
 
+        {!editing && (type === 'expense' || mode === 'bill' || type === 'refund' || type === 'reimbursement') && (
+          <div className="rounded-xl border border-dashed border-primary-300 dark:border-primary-700 p-2.5 flex items-center gap-3">
+            <label className={`btn btn-secondary py-2 text-sm cursor-pointer ${scan.busy ? 'opacity-60 pointer-events-none' : ''}`} data-testid="scan-receipt">
+              🧾 {scan.busy ? `Reading… ${scan.pct}%` : 'Scan receipt'}
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => onReceipt(e.target.files?.[0])} />
+            </label>
+            <p className="text-xs text-gray-500 flex-1">{scan.note || 'Take or upload a photo — amount, date, merchant and category are filled in for you to confirm.'}</p>
+          </div>
+        )}
+
         <div>
           <label className="label">Amount (Rs.)</label>
           <div className="flex gap-2">
@@ -166,7 +239,20 @@ export default function TransactionForm() {
               <select className="input w-20" value={f.adjustSign} onChange={e => set('adjustSign', e.target.value)}><option value="+">+</option><option value="-">−</option></select>
             )}
             <input ref={amountRef} inputMode="decimal" autoComplete="off" placeholder="0" className="input text-2xl font-semibold" value={f.amount} onChange={e => set('amount', e.target.value)} />
+            <select aria-label="Currency" className="input w-24" value={f.currency} disabled={repeat}
+              onChange={e => { const c = e.target.value; setF((p: any) => ({ ...p, currency: c, fxRate: c === baseCur ? '' : String(settings.fxRates?.[c] ?? '') })) }}>
+              {CURRENCY_LIST.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+            </select>
           </div>
+          {foreign && (
+            <div className="flex items-center gap-2 mt-2 text-sm text-gray-600 dark:text-gray-300">
+              <span>1 {f.currency} =</span>
+              <input inputMode="decimal" aria-label="Exchange rate" className="input py-1.5 w-28" value={f.fxRate} onChange={e => set('fxRate', e.target.value)} placeholder="rate" />
+              <span>{baseCur}</span>
+              {parseFloat(f.amount) > 0 && parseFloat(f.fxRate) > 0 && <span className="text-gray-400">≈ {formatCurrency(Math.round(parseFloat(String(f.amount).replace(/,/g, '')) * parseFloat(f.fxRate) * 100) / 100)}</span>}
+            </div>
+          )}
+          {repeat && <p className="text-xs text-gray-400 mt-1">Recurring rules use your base currency ({baseCur}).</p>}
         </div>
 
         {cats.length > 1 && (
@@ -179,7 +265,21 @@ export default function TransactionForm() {
                   {c.icon} {c.label}
                 </button>
               ))}
+              {kindForType(type) && (
+                <button type="button" onClick={() => setCustomOpen(o => !o)}
+                  className={`px-2.5 py-1.5 rounded-full text-sm border border-dashed ${customOpen ? 'border-primary-500 text-primary-600' : 'border-gray-300 dark:border-gray-500 text-gray-500 dark:text-gray-400'}`}>
+                  ✏️ Other…
+                </button>
+              )}
             </div>
+            {customOpen && (
+              <div className="flex gap-2 mt-2">
+                <input autoFocus className="input py-2" maxLength={40} placeholder={type === 'income' ? 'Type a category, e.g. Tuition classes' : 'Type a category, e.g. Pet care'}
+                  value={customText} onChange={e => setCustomText(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomCategory() } }} />
+                <button type="button" className="btn btn-primary py-2" disabled={!customText.trim()} onClick={addCustomCategory}>Add</button>
+              </div>
+            )}
           </div>
         )}
 
@@ -252,7 +352,7 @@ export default function TransactionForm() {
         {!editing && !['transfer', 'adjustment'].includes(type) && (
           <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2">
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-              <input type="checkbox" checked={repeat} disabled={mode === 'bill'} onChange={e => setRepeat(e.target.checked)} />
+              <input type="checkbox" checked={repeat} disabled={mode === 'bill'} onChange={e => { setRepeat(e.target.checked); if (e.target.checked) setF((p: any) => ({ ...p, currency: baseCur, fxRate: '' })) }} />
               {mode === 'bill' ? 'Repeats' : 'This repeats (create a recurring rule)'}
             </label>
             {repeat && (

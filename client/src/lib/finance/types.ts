@@ -35,9 +35,15 @@ export type ExpenseKind = 'regular' | 'one_time' | 'unexpected' | 'emergency'
 export interface Transaction {
   id: string
   type: TransactionType
-  /** Always a positive number. Direction comes from `type`. */
+  /** Always a positive number. Direction comes from `type`. Original currency. */
   amount: number
   currency: string
+  /** 1 unit of `currency` = fxRate units of the base currency (frozen at save time). */
+  fxRate?: number
+  /** Amount in the base currency (only stored when `currency` differs from base). */
+  baseAmount?: number
+  /** In-memory only: the original amount when `amount` has been normalised to base. */
+  originalAmount?: number
   /** Local calendar date, YYYY-MM-DD (source of truth for period grouping). */
   date: string
   /** Optional local time HH:mm */

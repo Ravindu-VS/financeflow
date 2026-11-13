@@ -6,7 +6,7 @@ import { transactionService, recurringService, NewTransaction } from './financeS
 import { savingsService, investmentService } from './firebaseService'
 import { useFinanceStore } from '../store/financeStore'
 import type { RecurringRule, Transaction, Frequency } from '../lib/finance'
-import { todayKey, buildOccurrence, occurrencesBetween, occurrenceId } from '../lib/finance'
+import { todayKey, buildOccurrence, occurrencesBetween, occurrenceId, withBaseAmount } from '../lib/finance'
 import { Timestamp } from 'firebase/firestore'
 
 export interface SaveOptions {
@@ -15,7 +15,14 @@ export interface SaveOptions {
   existingHoldingId?: string
 }
 
+/** Apply the user's base currency & FX rates (freezes baseAmount for foreign-currency entries). */
+export function toBaseCurrency<T extends { amount: number; currency: string; fxRate?: number; baseAmount?: number }>(t: T): T {
+  const { settings } = useFinanceStore.getState()
+  return withBaseAmount(t, settings.baseCurrency || 'LKR', settings.fxRates || {})
+}
+
 export async function saveTransaction(t: NewTransaction, opts: SaveOptions = {}) {
+  t = toBaseCurrency(t)
   const { accounts, goals, holdings } = useFinanceStore.getState()
   const today = todayKey()
   let recurrenceId: string | undefined
@@ -42,13 +49,14 @@ export async function saveTransaction(t: NewTransaction, opts: SaveOptions = {})
     if (opts.existingHoldingId) {
       const h = holdings.find(x => x.id === opts.existingHoldingId)
       if (h) {
-        await investmentService.update(h.id, { amount: (Number(h.amount) || 0) + t.amount, currentValue: (Number(h.currentValue) || Number(h.amount) || 0) + t.amount })
+        const b = t.baseAmount ?? t.amount
+        await investmentService.update(h.id, { amount: (Number(h.amount) || 0) + b, currentValue: (Number(h.currentValue) || Number(h.amount) || 0) + b })
         t = { ...t, investmentId: h.id }
       }
     } else if (opts.newHolding) {
       const id = (t as any).id || undefined
       const created: any = await investmentService.create({
-        name: opts.newHolding.name || t.description || 'Investment', type: t.category, amount: t.amount, currentValue: t.amount,
+        name: opts.newHolding.name || t.description || 'Investment', type: t.category, amount: t.baseAmount ?? t.amount, currentValue: t.baseAmount ?? t.amount,
         purchaseDate: Timestamp.fromDate(new Date(t.date + 'T12:00:00')), riskLevel: opts.newHolding.riskLevel || 'medium', status: 'active', txId: id || 'pending',
       })
       t = { ...t, investmentId: created.id }
@@ -61,7 +69,8 @@ export async function saveTransaction(t: NewTransaction, opts: SaveOptions = {})
   if ((t.type === 'savings_contribution' || t.type === 'savings_withdrawal') && t.goalId) {
     const g: any = goals.find(x => x.id === t.goalId) || await savingsService.getById(t.goalId)
     if (g) {
-      const delta = t.type === 'savings_contribution' ? t.amount : -t.amount
+      const baseAmt = t.baseAmount ?? t.amount
+      const delta = t.type === 'savings_contribution' ? baseAmt : -baseAmt
       const cur = (Number(g.currentAmount) || 0) + delta
       await savingsService.update(g.id, {
         currentAmount: cur,
@@ -76,12 +85,15 @@ export async function saveTransaction(t: NewTransaction, opts: SaveOptions = {})
 
 export async function updateTransaction(before: Transaction, patch: Partial<Transaction>) {
   const { accounts, goals } = useFinanceStore.getState()
+  if (patch.amount !== undefined || patch.currency !== undefined) {
+    patch = toBaseCurrency({ ...patch, amount: patch.amount ?? before.originalAmount ?? before.amount, currency: patch.currency ?? before.currency } as any)
+  }
   const r = await transactionService.update(before, patch, { accounts })
   // keep goal totals consistent when a contribution's amount changes
   if (before.goalId && patch.amount !== undefined && patch.amount !== before.amount) {
     const g = goals.find(x => x.id === before.goalId)
     const sign = before.type === 'savings_contribution' ? 1 : -1
-    if (g) await savingsService.update(g.id, { currentAmount: (Number(g.currentAmount) || 0) + sign * (patch.amount - before.amount) })
+    if (g) await savingsService.update(g.id, { currentAmount: (Number(g.currentAmount) || 0) + sign * ((patch.baseAmount ?? patch.amount) - before.amount) })
   }
   return r
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { apiClient, useAuthStore as useEnterpriseAuth } from '../../store/enterpriseStore'
+import { apiClient } from '../../store/enterpriseStore'
+import { auth } from '../../config/firebase'
 import toast from 'react-hot-toast'
 import { parseFinancialText, makePeriod, summarize, categoryLabel, todayKey, type ParsedEntry } from '../../lib/finance'
 import { useQuickAdd } from '../../store/quickAddStore'
@@ -119,7 +120,7 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
       // 1) On-device parser (works offline, no backend needed)
       let data = toResult(parseFinancialText(text, todayKey()), text)
       // 2) Optional: enterprise NLP backend when signed in to the gateway and local confidence is low
-      if (data.confidence < 0.6 && useEnterpriseAuth.getState().accessToken && navigator.onLine) {
+      if (data.confidence < 0.6 && auth.currentUser && navigator.onLine) {
         try {
           const { data: remote } = await apiClient.post('/api/v1/voice/process', { transcript: text }, { timeout: 4000 })
           if (remote?.confidence > data.confidence) data = remote

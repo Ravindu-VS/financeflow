@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import NotificationCenter from '../components/notifications/NotificationCenter'
+import { useAutoSync } from '../hooks/useBackendSync'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useFinanceStore } from '../store/financeStore'
@@ -59,7 +61,6 @@ const enterpriseNavigation = [
   { name: '🤖 AI Advisor', href: '/ai-advisor', icon: LightBulbIcon, badge: 'NEW' },
   { name: '🎙️ Voice', href: '/voice', icon: LightBulbIcon, badge: 'NEW' },
   { name: '❤️ Health Score', href: '/health-score', icon: ChartPieIcon, badge: 'NEW' },
-  { name: '🏗️ Architecture', href: '/architecture', icon: GlobeAltIcon, badge: 'NEW' },
   { name: '👔 Advisor Portal', href: '/advisor', icon: UserCircleIcon, badge: 'NEW' },
   { name: '👨‍👩‍👧‍👦 Family', href: '/family', icon: HomeIcon, badge: 'NEW' },
 ]
@@ -101,6 +102,7 @@ export default function DashboardLayout() {
   const navigate = useNavigate()
   const initFinance = useFinanceStore(s => s.init)
   const stopFinance = useFinanceStore(s => s.stop)
+  useAutoSync()
 
   // Start live, offline-capable data subscriptions for the signed-in user
   useEffect(() => {
@@ -277,10 +279,7 @@ export default function DashboardLayout() {
             </button>
 
             {/* Notifications */}
-            <button className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors relative">
-              <BellIcon className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
+            <NotificationCenter />
 
             {/* User avatar (mobile) */}
             <NavLink

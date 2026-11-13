@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import axios from 'axios'
+import { gatewayUrl, idToken } from '../services/backend'
 
 const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:8080'
 
@@ -49,8 +50,10 @@ interface RegisterData {
 export const apiClient = axios.create({ baseURL: GATEWAY_URL })
 
 // Request interceptor — add Bearer token to all requests
-apiClient.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken
+apiClient.interceptors.request.use(async (config) => {
+  // Hosted gateway + the signed-in user's Firebase ID token (verified by gateway and backend).
+  config.baseURL = gatewayUrl()
+  const token = (await idToken()) || useAuthStore.getState().accessToken
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -62,13 +65,11 @@ apiClient.interceptors.response.use(
     const original = error.config
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true
-      try {
-        await useAuthStore.getState().refreshAccessToken()
-        const newToken = useAuthStore.getState().accessToken
-        original.headers.Authorization = `Bearer ${newToken}`
+      // Firebase ID tokens expire hourly: force a refresh once and retry.
+      const fresh = await idToken(true)
+      if (fresh) {
+        original.headers.Authorization = `Bearer ${fresh}`
         return apiClient(original)
-      } catch {
-        useAuthStore.getState().logout()
       }
     }
     return Promise.reject(error)
@@ -236,7 +237,7 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
 
   fetchGatewayAnalytics: async () => {
     try {
-      const { data } = await axios.get(`${GATEWAY_URL}/gateway/analytics`)
+      const { data } = await axios.get(`${gatewayUrl()}/gateway/analytics`)
       set({ gatewayAnalytics: data.summary })
     } catch (e) {
       console.error('Gateway analytics fetch failed:', e)

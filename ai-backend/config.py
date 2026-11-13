@@ -2,7 +2,9 @@
 Application Configuration — FinAI Enterprise
 All settings loaded from environment variables
 """
+import os
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import List
 
 
@@ -32,17 +34,42 @@ class Settings(BaseSettings):
     # Redis (for rate limiting / caching)
     REDIS_URL: str = "redis://localhost:6379"
 
-    # CORS
+    # CORS (comma-separated string or JSON list in env)
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:4173",
         "http://localhost:8080",
-        "https://finai-enterprise.com"
+        "https://ravindu-vs.github.io",
     ]
 
+    # Firebase (the PWA's identity provider). ID tokens from this project are accepted.
+    FIREBASE_PROJECT_ID: str = "financeflow-a6aa0"
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def _split_origins(cls, v):
+        if isinstance(v, str) and not v.strip().startswith("["):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _async_driver(cls, v: str):
+        # Accept plain postgres:// URLs (Supabase/Render style) and force the asyncpg driver
+        if isinstance(v, str):
+            for prefix in ("postgres://", "postgresql://"):
+                if v.startswith(prefix):
+                    return "postgresql+asyncpg://" + v[len(prefix):]
+        return v
+
+    @property
+    def is_serverless(self) -> bool:
+        return bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
     # File Storage
-    UPLOAD_DIR: str = "uploads"
-    REPORTS_DIR: str = "reports"
+    UPLOAD_DIR: str = "/tmp/uploads" if os.environ.get("VERCEL") else "uploads"
+    REPORTS_DIR: str = "/tmp/reports" if os.environ.get("VERCEL") else "reports"
     MAX_UPLOAD_SIZE_MB: int = 10
 
     # Notification (optional)

@@ -66,7 +66,7 @@ def _calculate_expense_ratio_score(expenses: float, income: float) -> dict:
 def _calculate_budget_discipline_score(budgets: list) -> dict:
     """Score based on staying within budgets"""
     if not budgets:
-        return {"score": 50, "message": "No budgets set — create budgets for better tracking"}
+        return {"score": 50, "budgets_over": 0, "message": "No budgets set — create budgets for better tracking"}
     
     total_score = 0
     over_budget = 0
@@ -225,7 +225,7 @@ async def calculate_health_score(
     if investment_data["score"] < 50:
         recommendations.append({"priority": "medium", "action": "Start investing — consider Fixed Deposits or index funds"})
     if budget_data["score"] < 70:
-        recommendations.append({"priority": "medium", "action": f"{budget_data['budgets_over']} budget(s) exceeded — review spending"})
+        recommendations.append({"priority": "medium", "action": f"{budget_data['budgets_over']} budget(s) exceeded — review spending" if budget_data.get('budgets_over') else "Create budgets for your main spending categories"})
 
     breakdown = {
         "saving_rate": saving_data,

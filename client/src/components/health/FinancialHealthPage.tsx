@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiClient } from '../../store/enterpriseStore'
 import { useEnterpriseStore } from '../../store/enterpriseStore'
+import { runSync } from '../../hooks/useBackendSync'
 
 export default function FinancialHealthPage() {
   const { healthScore, healthGrade, fetchHealthScore } = useEnterpriseStore()
@@ -10,6 +11,7 @@ export default function FinancialHealthPage() {
   const calculateScore = async () => {
     setLoading(true)
     try {
+      await runSync().catch(() => undefined) // score the latest data
       const { data } = await apiClient.get('/api/v1/health-score/calculate')
       setDetails(data)
       fetchHealthScore()

@@ -8,6 +8,7 @@ import { usePeriodStore } from '../../store/periodStore'
 import { useFinanceStore, usePeriodTransactions } from '../../store/financeStore'
 import { useQuickAdd } from '../../store/quickAddStore'
 import { transactionService } from '../../services/financeService'
+import { toBaseCurrency } from '../../services/transactionActions'
 import {
   summarize, categoriesForType, toCSV, previewCSVImport, previewJSONImport, TRANSACTION_TYPES, categoryLabel,
   type Transaction, type TransactionType, type ImportPreview,
@@ -71,7 +72,11 @@ export default function TransactionsPage({ fixedType, title = 'Transactions', su
     if (!preview) return
     setImporting(true)
     try {
-      const rows = includeDupes ? [...preview.valid, ...preview.duplicates] : preview.valid
+      const raw = includeDupes ? [...preview.valid, ...preview.duplicates] : preview.valid
+      const rows: typeof raw = []
+      let noRate = 0
+      for (const r of raw) { try { rows.push(toBaseCurrency(r)) } catch { noRate++ } }
+      if (noRate) toast.error(`${noRate} row(s) skipped: no exchange rate for their currency (add it in Planning → Currency)`)
       const n = await transactionService.bulkCreate(rows, accounts)
       toast.success(`Imported ${n} transaction(s)`)
       setPreview(null); setImportOpen(false)

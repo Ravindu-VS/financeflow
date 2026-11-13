@@ -4,6 +4,13 @@ Simulates WSO2 Identity Server OAuth2/OIDC behavior
 """
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
+import os
+import json
+import time
+import secrets
+import httpx
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -94,12 +101,109 @@ def decode_token(token: str) -> dict:
         )
 
 
+# ─── Firebase ID token verification (the PWA's identity provider) ────────────
+# Tokens are RS256-signed by Google. Keys rotate; we cache them per Cache-Control.
+
+_FIREBASE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+_cert_cache: dict = {"keys": {}, "expires": 0.0}
+
+
+def _firebase_public_keys() -> dict:
+    # Test hook: inject keys via env, only honoured when ENVIRONMENT=test
+    if settings.ENVIRONMENT == "test" and os.environ.get("FIREBASE_TEST_KEYS"):
+        return json.loads(os.environ["FIREBASE_TEST_KEYS"])
+    now = time.time()
+    if _cert_cache["keys"] and now < _cert_cache["expires"]:
+        return _cert_cache["keys"]
+    r = httpx.get(_FIREBASE_CERTS_URL, timeout=10)
+    r.raise_for_status()
+    max_age = 3600
+    cc = r.headers.get("cache-control", "")
+    for part in cc.split(","):
+        part = part.strip()
+        if part.startswith("max-age="):
+            try:
+                max_age = int(part.split("=", 1)[1])
+            except ValueError:
+                pass
+    keys = {}
+    for kid, pem in r.json().items():
+        cert = x509.load_pem_x509_certificate(pem.encode())
+        keys[kid] = cert.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode()
+    _cert_cache.update({"keys": keys, "expires": now + max_age})
+    return keys
+
+
+def verify_firebase_token(token: str) -> dict:
+    """Validate a Firebase Auth ID token (signature, audience, issuer, expiry, subject)."""
+    try:
+        header = jwt.get_unverified_header(token)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    kid = header.get("kid")
+    keys = _firebase_public_keys()
+    if kid not in keys:
+        _cert_cache["expires"] = 0  # keys may have rotated
+        keys = _firebase_public_keys()
+    if kid not in keys:
+        raise HTTPException(status_code=401, detail="Unknown token key")
+    project = settings.FIREBASE_PROJECT_ID
+    try:
+        claims = jwt.decode(
+            token, keys[kid], algorithms=["RS256"], audience=project,
+            issuer=f"https://securetoken.google.com/{project}",
+            options={"verify_at_hash": False},
+        )
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid Firebase token: {e}")
+    if not claims.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid Firebase token subject")
+    return claims
+
+
+async def _user_from_firebase(claims: dict, db: AsyncSession) -> User:
+    """Find (or provision on first call) the backend user for a Firebase account."""
+    email = (claims.get("email") or f"{claims['sub']}@firebase.local").lower()
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user:
+        return user
+    name = (claims.get("name") or email.split("@")[0]).split(" ")
+    user = User(
+        email=email,
+        password_hash=hash_password(secrets.token_urlsafe(32)),  # unusable: login is via Firebase
+        first_name=name[0][:100] or "User",
+        last_name=" ".join(name[1:])[:100] or None,
+        is_active=True,
+        is_verified=bool(claims.get("email_verified")),
+    )
+    role = (await db.execute(select(Role).where(Role.name == "normal_user"))).scalar_one_or_none()
+    if role:
+        user.roles = [role]
+    db.add(user)
+    await db.flush()
+    return user
+
+
 # ─── Current User Dependency ──────────────────────────────────────────────────
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> User:
+    # Firebase ID tokens are RS256; the backend's own (WSO2-IS style) tokens are HS256.
+    try:
+        alg = jwt.get_unverified_header(token).get("alg")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
+    if alg == "RS256":
+        user = await _user_from_firebase(verify_firebase_token(token), db)
+        if not user.is_active:
+            raise HTTPException(status_code=401, detail="User inactive")
+        return user
+
     payload = decode_token(token)
     user_id = payload.get("sub")
     if not user_id:

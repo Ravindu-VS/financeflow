@@ -9,6 +9,7 @@ import { useFinanceStore } from '../../store/financeStore'
 import { EXPENSE_CATEGORY_DEFS, getCategory } from '../../lib/finance'
 import { formatCurrency } from '../../utils/currency'
 import { Link } from 'react-router-dom'
+import BudgetPlanCard from './BudgetPlanCard'
 
 /**
  * Budgets are PLANS. Spending shown here is actual net spending (refunds deducted) for the
@@ -61,6 +62,8 @@ export default function BudgetsPage() {
         <Card padding="sm"><p className="text-xs text-gray-500">Remaining</p><p className={`text-lg font-bold tabular-nums ${total - spent < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(total - spent)}</p></Card>
         <Card padding="sm"><p className="text-xs text-gray-500">Unbudgeted spending</p><p className="text-lg font-bold text-amber-600 tabular-nums">{formatCurrency(unbudgeted.reduce((a, c) => a + c.total, 0))}</p></Card>
       </div>
+
+      <BudgetPlanCard />
 
       <Card>
         <SectionHeader title="Category budgets" subtitle={d.period.unit === 'month' ? 'Monthly' : 'Monthly budgets scaled to the selected period'} />

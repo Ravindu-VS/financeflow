@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
-import { apiClient, useAuthStore } from '../../store/enterpriseStore'
+import { apiClient } from '../../store/enterpriseStore'
 
 export default function AdvisorPortal() {
   const [clients, setClients] = useState<any[]>([])
   const [selectedClient, setSelectedClient] = useState<any>(null)
   const [clientDetails, setClientDetails] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const user = useAuthStore(state => state.user)
+  const [user, setUser] = useState<{ is_advisor: boolean; roles: string[]; first_name?: string; last_name?: string } | null>(null)
+  const [checked, setChecked] = useState(false)
 
   useEffect(() => {
-    fetchClients()
+    apiClient.get('/api/v1/auth/me').then(r => { setUser(r.data); if (r.data?.is_advisor) fetchClients(); else setLoading(false) })
+      .catch(() => setLoading(false)).finally(() => setChecked(true))
   }, [])
 
   const fetchClients = async () => {
@@ -31,6 +33,7 @@ export default function AdvisorPortal() {
     } catch (e) { console.error(e) }
   }
 
+  if (!checked) return <div className="min-h-[400px] flex items-center justify-center text-gray-400">Checking access…</div>
   if (!user?.is_advisor) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">

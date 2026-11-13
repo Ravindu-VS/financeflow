@@ -19,6 +19,8 @@ from routers import (
     investments, reports, ai_advisor, predictions,
     health_score, fraud, voice, analytics, advisor, family
 )
+from routers.sync import router as sync_router
+from sqlalchemy import text
 
 # Logging
 logging.basicConfig(
@@ -32,10 +34,15 @@ logger = logging.getLogger("finai-enterprise")
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     logger.info("🚀 FinAI Enterprise starting up...")
-    # Create all tables on startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("✅ Database tables ready")
+    # Schema is managed by SQL migrations (database/schema.sql + migrations/). create_all only
+    # fills gaps in local development; on serverless it is skipped to keep cold starts fast.
+    if not settings.is_serverless:
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("✅ Database tables ready")
+        except Exception as e:  # never block startup on DDL
+            logger.warning(f"create_all skipped: {e}")
     logger.info(f"🤖 LLM Provider: {settings.LLM_PROVIDER}")
     yield
     logger.info("🛑 FinAI Enterprise shutting down...")
@@ -103,24 +110,33 @@ app.include_router(voice.router,       prefix="/api/v1/voice",       tags=["Voic
 app.include_router(analytics.router,   prefix="/api/v1/analytics",   tags=["Analytics"])
 app.include_router(advisor.router,     prefix="/api/v1/advisor",     tags=["Financial Advisor Portal"])
 app.include_router(family.router,      prefix="/api/v1/family",      tags=["Family Accounts"])
+app.include_router(sync_router,        prefix="/api/v1/sync",        tags=["Firestore Sync"])
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
 
 @app.get("/health", tags=["Health"])
 async def health_check():
+    """Real dependency checks (used by the app's service status panel)."""
+    db_status, db_latency = "offline", None
+    try:
+        t0 = time.time()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_status, db_latency = "online", round((time.time() - t0) * 1000)
+    except Exception as e:
+        logger.error(f"DB health check failed: {e}")
+    from services.llm_service import llm_service
+    llm = await llm_service.check_health()
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "online" else "degraded",
         "service": "FinAI Enterprise AI Backend",
-        "version": "2.0.0",
-        "architecture": "WSO2 Enterprise SaaS",
+        "version": "2.1.0",
         "components": {
-            "database": "PostgreSQL",
-            "ai_provider": settings.LLM_PROVIDER,
-            "ml_engine": "scikit-learn + statsmodels",
-            "nlp": "spaCy",
-            "report_engine": "ReportLab + openpyxl"
-        }
+            "database": {"status": db_status, "engine": "PostgreSQL", "latency_ms": db_latency},
+            "llm": {**llm, "provider": settings.LLM_PROVIDER, "model": settings.GEMINI_MODEL if settings.LLM_PROVIDER == "gemini" else settings.OPENAI_MODEL},
+            "auth": {"status": "online", "providers": ["firebase", "jwt"]},
+        },
     }
 
 

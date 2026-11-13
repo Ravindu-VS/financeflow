@@ -1,8 +1,20 @@
-// Currency configuration for Sri Lankan Rupee (LKR)
+import { currencySymbol } from '../lib/finance/currency'
+
+// Display currency = the user's base currency (default Sri Lankan Rupee). Updated from settings.
 export const CURRENCY = {
   code: 'LKR',
   symbol: 'Rs.',
   locale: 'en-LK'
+}
+
+export function setDisplayCurrency(code: string) {
+  CURRENCY.code = code
+  CURRENCY.symbol = currencySymbol(code) || code
+}
+
+/** Format an amount in a specific (possibly foreign) currency. */
+export function formatMoney(amount: number, code: string): string {
+  return `${currencySymbol(code) || code} ${amount.toLocaleString('en-LK', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
 /**

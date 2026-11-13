@@ -147,12 +147,13 @@ See the audit for full detail. Headlines:
 
 | Suite | Result |
 |---|---|
-| Unit — `npm test` (Vitest, `lib/finance`) | **64 / 64 pass** in Asia/Colombo, UTC, America/New_York and Pacific/Auckland. Covers the §57 scenario (income 100,000 / expenses 40,000 / savings 20,000 / investment 10,000 / transfer 30,000 → transfer never counted, available cash correct), one-time and recurring income/expenses, unexpected expense, refund, transfer, investment, savings, previous and current month, custom range, budget forecast, recurring generation and idempotency, history immutability, duplicate detection, validation, voice parsing, AI insights, import/export, migration. |
-| E2E — `npm run test:e2e` (Playwright + Chrome, real UI, in-memory Firebase fake) | **3 / 3 pass**: (1) migration → quick expense → transfer → exact balances → current-month cards (transfer excluded) → previous-month history → voice → form → save → AI answer → all 14 routes render with **zero console errors**; (2) auto-recurring salary creates 3 occurrences, no duplicates across reloads, editing the rule leaves history unchanged; (3) offline entry accepted with the Offline indicator. |
-| Type check / production build | Pass, verified from a clean `npm ci` of the updated lockfile (the same steps CI runs). |
-| SQL migration | Pass on Postgres 16 (see §11). |
+| Unit — `npm test` (Vitest, `lib/finance`) | **91 / 91 pass.** Accounting model, periods, recurrence & idempotency, migration, import/export, multi-currency, plus the new engines: receipt parser (totals, day-first dates, merchants, items), Holt forecasting & intervals, anomaly detection, all five budget methods, investment advisor (emergency-fund gate, allocation, future value, ROI), alert rules, concurrent-edit resolution. |
+| E2E — `npm run test:e2e` (Playwright + Chrome, real UI, in-memory Firebase) | **4 / 4 pass**, zero console errors: (1) migration → quick add → custom category → transfer → balances → periods → voice → AI; (2) recurring generation idempotent; (3) offline entry; (4) notification centre (budget + unusual expense, dismiss persists), zero-based plan, 3-month forecast + anomalies, investment advisor (risk profile saved), service-status panel, concurrent edit on two devices → conflict reported, other device's value kept. |
+| Backend — `pytest` (FastAPI on real PostgreSQL 16) | **11 / 11 pass**: health with real DB check, token rejection, Firebase user provisioning, sync upsert/mirror/delete/idempotency/currency, per-user isolation, validation, AI never invents numbers, voice, `/auth/me` roles, PDF/XLSX/CSV reports returned inline, health score from synced data. A smoke run of **every** GET endpoint returns 200 (advisor endpoints 403 for non-advisors, as intended). |
+| Gateway — `npm test` (Node, end-to-end through the backend) | **4 / 4 pass**: health aggregation, unauthenticated/foreign-project tokens rejected, POST bodies proxied with full path, rate-limit headers. |
+| Type check / production build / clean `npm ci` | Pass. Heavy on-demand libraries (Excel/PDF/OCR) are excluded from the PWA precache (1.8 MB). |
 
-**Not covered by automated tests:** authentication against real Firebase, the WSO2 gateway, FastAPI endpoints (no Python test suite exists yet), and real-device PWA install. The sandbox couldn't reach Google services.
+Bugs found and fixed by the new backend tests: report router crashed on a read-only filesystem at import; `ai_insights`/`reports`/`audit_logs`/`notifications` models pointed at a non-existent `extra_data` column; `/voice/history` missing import; health score `KeyError` when no budgets exist.
 
 ## 13. Security results
 
@@ -175,24 +176,27 @@ See the audit for full detail. Headlines:
 - Postgres gets an aggregation MV and (user, date) indexes.
 - Production bundle: new pages are lazy-loaded at 6–17 kB gzip each. Firebase (131 kB gzip) and charts (114 kB gzip) are unchanged vendor chunks.
 
-## 15. Remaining limitations
+## 15. Hosted services (all online)
 
-1. WSO2 is simulated, and PWA ↔ Firestore traffic doesn't pass through the gateway (see §8).
-2. Receipt **OCR** is not implemented: the image is captured and stored, and fields are entered by hand. The form is OCR-ready, since an extractor only needs to fill the same fields.
-3. Excel and PDF are delivered as CSV (opens in Excel) and browser print-to-PDF. There is no native .xlsx/.pdf writer on the client; the backend Report Center still offers those when running.
-4. Multi-currency: amounts carry `currency`, but totals assume LKR (no FX conversion).
-5. Balance edits to a contribution/investment don't re-sync the linked goal/holding beyond amount changes. Deleting a goal keeps its transactions (by design).
-6. Safe-to-spend ignores income still expected this month (conservative). The FastAPI health/prediction/fraud routers still read Postgres, which is empty unless synced.
-7. Market pages show static sample data (now labelled in code).
+| Service | Where | Notes |
+|---|---|---|
+| PWA (frontend) | GitHub Pages `ravindu-vs.github.io/financeflow` | Built and deployed by GitHub Actions on every push to `main` (tests + type check gate the deploy). |
+| Firestore + Firebase Auth | Firebase project `financeflow-a6aa0` | System of record; offline-first. |
+| API Gateway (WSO2-pattern) | Vercel project `financeflow-gateway` | Verifies Firebase ID tokens (Google certs), API keys, rate limits, request ids, analytics, `/gateway/health` aggregates real upstream status. |
+| AI Backend (FastAPI) | Vercel project `financeflow-api` (Python, region bom1) | Firebase-token auth, Firestore→PostgreSQL sync, Gemini AI chat/insights, reports, health score, predictions, fraud, voice. |
+| PostgreSQL | Supabase `tpaderdqsjhcgqsvsqjv` (ap-south-1), Supavisor pooler | Schema + migrations 001/002, RLS on every table, dedicated least-privilege role `finai_backend`. |
+| LLM | Google Gemini (`gemini-2.5-flash`) | Key stored only as an encrypted Vercel env var. `/health` verifies the key against the Gemini API. |
 
-## 16. Future improvements
+Data flow: the app writes to Firestore → auto-sync (debounced, and on reconnect) pushes the rolling 13-month window to `POST /api/v1/sync/firestore` through the gateway → backend upserts by Firestore id, mirrors income/expenses and removes deleted rows. Every feature still works on-device if a service is unreachable (AI falls back to your own Gemini key, then to on-device answers).
 
-- Firestore → Postgres sync (Cloud Function or a scheduled export) so the FastAPI analytics, health and fraud routers see real data.
-- A real WSO2 APIM + IS deployment with Firebase-token exchange.
-- OCR (Tesseract.js on-device or a backend Vision API).
-- FX rates, bank-statement auto-categorisation via AI.
-- Push notifications for bills and budget alerts.
-- A pytest suite for FastAPI, and Playwright against the Firebase emulator in CI.
+Settings → **Services & AI** shows live status of every service, last sync and a "Sync now" button.
+
+## 16. Remaining limitations
+
+1. WSO2 itself (APIM/IS) is not hosted — the gateway implements the same policies (token validation, throttling, analytics) as a Node service.
+2. Rate limiting is per serverless instance (no hosted Redis).
+3. OCR runs on-device (Tesseract); the first scan downloads the English model (~10 MB) and needs a connection.
+4. Market pages show sample data.
 
 ## 17. Exact commands to run the project
 
@@ -209,10 +213,16 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ai-backend/database/migrations/001_tr
 ## 18. Exact commands to run tests
 
 ```bash
-npm test                         # 64 unit tests (Vitest)
+npm test                         # 91 unit tests (Vitest)
 npm run typecheck
 npm run build
-cd client && npx playwright install chromium && npm run test:e2e   # 3 E2E tests
+cd client && npx playwright install chromium && npm run test:e2e   # 4 E2E tests
+
+# backend (needs PostgreSQL with database/schema.sql + migrations 001, 002)
+cd ai-backend && pip install -r requirements.txt -r requirements-dev.txt
+DATABASE_URL=postgresql://user@localhost:5432/finai_test ENVIRONMENT=test pytest -q    # 11 tests
+# gateway (backend running on :8000)
+cd gateway && npm ci && AI_BACKEND_URL=http://127.0.0.1:8000 npm test           # 4 tests
 #   or with a local Chrome:  PW_CHROME_PATH=/path/to/chrome npm run test:e2e
 ```
 
@@ -220,7 +230,15 @@ cd client && npx playwright install chromium && npm run test:e2e   # 3 E2E tests
 
 1. Back up Firestore: `gcloud firestore export gs://<bucket>/backup-$(date +%F)`. Each user's in-app migration also downloads a personal JSON backup.
 2. `firebase deploy --only firestore:rules` (uses `/firestore.rules`).
-3. Commit and push to `main`. GitHub Actions runs `npm ci` → **unit tests** → type check → build → deploys `client/dist` to GitHub Pages.
+3. **Add the test gate to CI (manual — the workflow file couldn't be written remotely).** In `.github/workflows/deploy.yml`, after the `Install dependencies` step, add:
+   ```yaml
+         - name: Unit tests (financial calculations, recurrence, migration, import/export)
+           run: npm test
+
+         - name: Type check
+           run: npm run typecheck
+   ```
+   Then commit and push to `main`. GitHub Actions runs `npm ci` → unit tests → type check → build → deploys `client/dist` to GitHub Pages.
 4. Open the app. Each existing user sees the upgrade banner once: backup → analyse → upgrade.
 5. Optional: run the SQL migration on the enterprise Postgres (back up with `pg_dump -Fc` first).
 

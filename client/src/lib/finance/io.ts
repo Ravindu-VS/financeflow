@@ -9,7 +9,7 @@ import { isValidDateKey, toDateKey } from './dates'
 import { mapLegacyExpenseCategory, mapLegacyIncomeCategory, categoryLabel } from './categories'
 import { round2 } from './aggregate'
 
-export const CSV_COLUMNS = ['date', 'time', 'type', 'amount', 'currency', 'category', 'subcategory', 'description', 'merchant', 'account', 'payment_method', 'tags', 'notes', 'status', 'source'] as const
+export const CSV_COLUMNS = ['date', 'time', 'type', 'amount', 'currency', 'base_amount', 'category', 'subcategory', 'description', 'merchant', 'account', 'payment_method', 'tags', 'notes', 'status', 'source'] as const
 
 function esc(v: unknown): string {
   const s = v == null ? '' : String(v)
@@ -22,7 +22,7 @@ export function toCSV(txs: Transaction[], accountName: (id?: string) => string =
   const rows = [CSV_COLUMNS.join(',')]
   for (const t of [...txs].sort((a, b) => a.date.localeCompare(b.date))) {
     rows.push([
-      t.date, t.time || '', t.type, t.amount, t.currency, categoryLabel(t.category), t.subcategory || '', t.description || '',
+      t.date, t.time || '', t.type, t.originalAmount ?? t.amount, t.currency, t.baseAmount ?? t.amount, categoryLabel(t.category), t.subcategory || '', t.description || '',
       t.merchant || '', accountName(t.accountId), t.paymentMethod || '', (t.tags || []).join(';'), t.notes || '', t.status, t.source,
     ].map(esc).join(','))
   }

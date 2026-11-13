@@ -274,7 +274,7 @@ async def get_voice_history(
     db: AsyncSession = Depends(get_db)
 ):
     """Get recent voice command history"""
-    from sqlalchemy import desc
+    from sqlalchemy import desc, select
     result = await db.execute(
         select(VoiceCommand)
         .where(VoiceCommand.user_id == current_user.id)

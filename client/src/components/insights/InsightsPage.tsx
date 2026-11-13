@@ -6,6 +6,7 @@ import { usePeriodData } from '../../hooks/useFinance'
 import { useFinanceStore } from '../../store/financeStore'
 import { analyzeBehavior, detectRecurring, subscriptionSpend, formatDateKey, SMALL_PURCHASE_LIMIT, getCategory, type Insight } from '../../lib/finance'
 import { formatCurrency } from '../../utils/currency'
+import ForecastCard from './ForecastCard'
 
 const KIND = {
   fact: { label: 'FACT', cls: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200', help: 'Measured from your recorded transactions' },
@@ -53,6 +54,8 @@ export default function InsightsPage() {
           <p className="text-xs text-gray-400 mt-1">{d.forecast.basis} Predictions are estimates, not guarantees.</p>
         </Card>
       )}
+
+      <ForecastCard />
 
       {groups.map(g => g.items.length > 0 && (
         <div key={g.k} className="space-y-3">

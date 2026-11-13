@@ -13,7 +13,8 @@
  */
 require('dotenv').config();
 const express = require('express');
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
+const crypto = require('crypto');
 const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
@@ -48,15 +49,18 @@ const analyticsStore = {
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
+app.set('trust proxy', 1); // behind Vercel / load balancer: real client IP for rate limiting
+
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:3000'],
+  origin: process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()) || ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:4173', 'https://ravindu-vs.github.io'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID']
 }));
 
-app.use(express.json({ limit: '20mb' }));
-app.use(morgan('combined'));
+// Request bodies are NOT parsed here: they are streamed unchanged to the upstream service.
+// (Parsing would consume the stream and break proxied POST/PUT bodies.)
+app.use(morgan(process.env.VERCEL ? 'tiny' : 'combined'));
 
 // ─── WSO2 API Manager Headers ─────────────────────────────────────────────────
 
@@ -133,18 +137,47 @@ const reportLimiter = rateLimit({
 
 // ─── JWT Validation Middleware (WSO2 IS token validation) ─────────────────────
 
-const validateJWT = (req, res, next) => {
+// Firebase ID tokens (the PWA's identity provider, RS256) — Google rotates keys; cache them.
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'financeflow-a6aa0';
+const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
+let certCache = { certs: {}, expires: 0 };
+async function firebaseCerts(force = false) {
+  if (!force && Date.now() < certCache.expires && Object.keys(certCache.certs).length) return certCache.certs;
+  const r = await fetch(FIREBASE_CERTS_URL);
+  if (!r.ok) throw new Error(`cert fetch ${r.status}`);
+  const m = /max-age=(\d+)/.exec(r.headers.get('cache-control') || '');
+  certCache = { certs: await r.json(), expires: Date.now() + (m ? Number(m[1]) : 3600) * 1000 };
+  return certCache.certs;
+}
+// Test hook only (never set in production): inject signing keys instead of fetching Google's.
+if (process.env.NODE_ENV === 'test') app.__setFirebaseCerts = certs => { certCache = { certs, expires: Date.now() + 3600e3 } }
+
+async function verifyFirebase(token) {
+  const decoded = jwt.decode(token, { complete: true });
+  if (!decoded) throw new Error('malformed');
+  let certs = await firebaseCerts();
+  if (!certs[decoded.header.kid]) certs = await firebaseCerts(true);
+  const cert = certs[decoded.header.kid];
+  if (!cert) throw new Error('unknown key');
+  return jwt.verify(token, cert, {
+    algorithms: ['RS256'], audience: FIREBASE_PROJECT_ID, issuer: `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`,
+  });
+}
+
+const validateJWT = async (req, res, next) => {
+  if (req.method === 'OPTIONS') return next();
   // Skip auth for public routes
-  const publicPaths = ['/api/v1/auth/login', '/api/v1/auth/register', '/health', '/gateway/health', '/gateway/analytics'];
-  if (publicPaths.some(p => req.path.startsWith(p))) {
+  const publicPaths = ['/api/v1/auth/login', '/api/v1/auth/register', '/api/v1/auth/refresh', '/health', '/gateway/health', '/gateway/analytics'];
+  if (req.path === '/' || publicPaths.some(p => req.path.startsWith(p))) {
     return next();
   }
 
   const authHeader = req.headers.authorization;
   const apiKey = req.headers['x-api-key'];
-  
-  // API Key authentication
-  if (apiKey && apiKey === process.env.GATEWAY_API_KEY) {
+
+  // API Key authentication (constant-time compare)
+  if (apiKey && process.env.GATEWAY_API_KEY && apiKey.length === process.env.GATEWAY_API_KEY.length &&
+      crypto.timingSafeEqual(Buffer.from(apiKey), Buffer.from(process.env.GATEWAY_API_KEY))) {
     req.user = { sub: 'api-key-user', roles: ['normal_user'], auth_method: 'api_key' };
     return next();
   }
@@ -158,16 +191,22 @@ const validateJWT = (req, res, next) => {
   }
 
   const token = authHeader.split(' ')[1];
-  
+  const header = (jwt.decode(token, { complete: true }) || {}).header || {};
+
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY || 'your-super-secret-jwt-key-change-in-production');
-    req.user = decoded;
+    if (header.alg === 'RS256') {
+      const claims = await verifyFirebase(token);
+      req.user = { sub: claims.sub, email: claims.email, roles: ['normal_user'], auth_method: 'firebase' };
+    } else {
+      if (!process.env.JWT_SECRET_KEY) throw new Error('local JWT disabled');
+      req.user = { ...jwt.verify(token, process.env.JWT_SECRET_KEY, { algorithms: ['HS256'] }), auth_method: 'jwt' };
+    }
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'token_expired', message: 'JWT token expired — please refresh' });
     }
-    return res.status(401).json({ error: 'invalid_token', message: 'Invalid JWT token' });
+    return res.status(401).json({ error: 'invalid_token', message: 'Invalid or untrusted token' });
   }
 };
 
@@ -189,74 +228,77 @@ const requireScope = (...requiredRoles) => (req, res, next) => {
 // ─── Service Configuration ────────────────────────────────────────────────────
 
 const AI_BACKEND_URL = process.env.AI_BACKEND_URL || 'http://localhost:8000';
-const NODE_BACKEND_URL = process.env.NODE_BACKEND_URL || 'http://localhost:5000';
 
-const proxyConfig = {
+// One proxy for all /api/v1 traffic. pathFilter keeps the full original path
+// (app.use('/prefix', proxy) would strip the prefix before forwarding).
+const backendProxy = createProxyMiddleware({
+  target: AI_BACKEND_URL,
   changeOrigin: true,
+  pathFilter: '/api/v1',
+  proxyTimeout: 55000,
   on: {
+    proxyReq: (proxyReq, req) => {
+      fixRequestBody(proxyReq, req);
+      proxyReq.setHeader('X-Request-ID', req.requestId);
+      if (req.user?.sub) proxyReq.setHeader('X-Gateway-User', req.user.sub);
+    },
     proxyRes: (proxyRes, req) => {
       proxyRes.headers['X-Proxied-By'] = 'FinAI-WSO2-Gateway';
+      analyticsStore.add({ requestId: req.requestId, method: req.method, path: req.originalUrl.split('?')[0], statusCode: proxyRes.statusCode, durationMs: Date.now() - req.startTime, userId: req.user?.sub || 'anonymous' });
     },
     error: (err, req, res) => {
       console.error(`[Gateway] Proxy error: ${err.message}`);
-      res.status(502).json({ error: 'service_unavailable', message: 'Backend service unavailable', service: err.message });
+      if (!res.headersSent) res.status(502).json({ error: 'service_unavailable', message: 'Backend service unavailable' });
     }
   }
-};
+});
 
 // ─── API Routes with Security & Rate Limiting ─────────────────────────────────
 
 app.use(validateJWT);
-app.use(defaultLimiter);
-
-// Auth routes → AI Backend
-app.use('/api/v1/auth', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-
-// AI routes → FastAPI (with AI-specific rate limit + advisor scope on some)
-app.use('/api/v1/ai', aiLimiter, createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/predictions', aiLimiter, createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/health-score', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/fraud', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-
-// Core financial routes → AI Backend
-app.use('/api/v1/income', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/expenses', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/budgets', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/savings', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/investments', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/analytics', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/reports', reportLimiter, createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/voice', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-app.use('/api/v1/family', createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-
-// Advisor portal → AI Backend (requires advisor role)
-app.use('/api/v1/advisor', requireScope('financial_advisor', 'admin'), createProxyMiddleware({ target: AI_BACKEND_URL, ...proxyConfig }));
-
-// Legacy Node.js routes → Node Backend
-app.use('/api/market', createProxyMiddleware({ target: NODE_BACKEND_URL, ...proxyConfig }));
-app.use('/api/insights', createProxyMiddleware({ target: NODE_BACKEND_URL, ...proxyConfig }));
+app.use('/api/v1', defaultLimiter);
+app.use(['/api/v1/ai', '/api/v1/predictions'], aiLimiter);
+app.use('/api/v1/reports', reportLimiter);
+app.use('/api/v1/advisor', requireScope('financial_advisor', 'admin'));
+app.use(backendProxy);
 
 // ─── Gateway Management APIs ──────────────────────────────────────────────────
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    service: 'FinAI Enterprise API Gateway',
-    version: '1.0.0',
-    uptime: Math.floor(process.uptime()),
-    architecture: 'WSO2 API Manager Simulation',
-    features: ['JWT Validation', 'Rate Limiting', 'API Analytics', 'RBAC', 'Proxy Routing']
-  });
+async function probe(url, timeoutMs = 15000) {
+  const t0 = Date.now();
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    const body = await r.json().catch(() => ({}));
+    return { status: r.ok ? 'online' : 'degraded', http: r.status, latency_ms: Date.now() - t0, body };
+  } catch (e) {
+    return { status: 'offline', error: e.name === 'TimeoutError' ? 'timeout' : e.message, latency_ms: Date.now() - t0 };
+  }
+}
+
+const gatewayInfo = () => ({
+  status: 'online',
+  service: 'FinAI Enterprise API Gateway',
+  version: '1.1.0',
+  uptime: Math.floor(process.uptime()),
+  architecture: 'WSO2 API Manager pattern (Node gateway)',
+  features: ['Firebase + JWT validation', 'Rate limiting', 'API analytics', 'RBAC', 'Proxy routing'],
 });
 
-app.get('/gateway/health', (req, res) => {
+app.get('/', (req, res) => res.json(gatewayInfo()));
+app.get('/health', (req, res) => res.json(gatewayInfo()));
+
+// Real end-to-end status: gateway → backend → database / LLM
+app.get('/gateway/health', async (req, res) => {
+  const backend = await probe(`${AI_BACKEND_URL}/health`);
+  const comps = backend.body?.components || {};
   res.json({
-    gateway: 'online',
-    upstream_services: {
-      ai_backend: AI_BACKEND_URL,
-      node_backend: NODE_BACKEND_URL
-    },
-    timestamp: new Date().toISOString()
+    gateway: { status: 'online', version: '1.1.0' },
+    ai_backend: { status: backend.status, latency_ms: backend.latency_ms, error: backend.error },
+    database: comps.database || { status: backend.status === 'offline' ? 'unknown' : 'offline' },
+    llm: comps.llm || { status: 'unknown' },
+    auth: { status: 'online', provider: 'Firebase Authentication', project: FIREBASE_PROJECT_ID },
+    rate_limiting: { status: 'online', store: 'in-memory per instance' },
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -282,23 +324,12 @@ app.get('/gateway/analytics', (req, res) => {
   });
 });
 
-// ─── Start Gateway ────────────────────────────────────────────────────────────
+// ─── Start Gateway (local) / export for serverless (Vercel) ───────────────────
 
-app.listen(PORT, () => {
-  console.log(`
-╔══════════════════════════════════════════════════════╗
-║        FinAI Enterprise — WSO2 API Gateway           ║
-║                                                      ║
-║  🌐 Gateway Port:    ${PORT}                         ║
-║  🤖 AI Backend:      ${AI_BACKEND_URL}    ║
-║  📡 Node Backend:    ${NODE_BACKEND_URL}  ║
-║                                                      ║
-║  🔐 JWT Validation:   Active                         ║
-║  ⚡ Rate Limiting:    Active (100 req/min)            ║
-║  📊 API Analytics:    Active                         ║
-║  🛡️  RBAC Scopes:     Active                         ║
-╚══════════════════════════════════════════════════════╝
-  `);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`FinAI Gateway on :${PORT} → AI backend ${AI_BACKEND_URL}`);
+  });
+}
 
 module.exports = app;

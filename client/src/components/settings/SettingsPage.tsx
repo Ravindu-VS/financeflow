@@ -7,7 +7,9 @@ import { authService } from '../../services/firebaseService'
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { auth } from '../../config/firebase'
 import { Card, SectionHeader, Button, Input, Select } from '../ui'
+import ServicesPanel, { DeviceNotificationsCard } from './ServicesPanel'
 import {
+  ServerStackIcon,
   Cog6ToothIcon,
   BellIcon,
   ShieldCheckIcon,
@@ -20,7 +22,7 @@ import {
 export default function SettingsPage() {
   const { user, updateUser } = useAuthStore()
   const { theme, toggleTheme } = useThemeStore()
-  const [activeTab, setActiveTab] = useState<'preferences' | 'notifications' | 'security'>('preferences')
+  const [activeTab, setActiveTab] = useState<'preferences' | 'notifications' | 'security' | 'services'>(new URLSearchParams(location.search).get('tab') === 'services' ? 'services' : 'preferences')
   const [loading, setLoading] = useState(false)
 
   const { register: registerPrefs, handleSubmit: handlePrefs, formState: { isSubmitting: isSubmittingPrefs } } = useForm({
@@ -87,7 +89,8 @@ export default function SettingsPage() {
   const tabs = [
     { id: 'preferences', name: 'Preferences', icon: Cog6ToothIcon },
     { id: 'notifications', name: 'Notifications', icon: BellIcon },
-    { id: 'security', name: 'Security', icon: ShieldCheckIcon }
+    { id: 'security', name: 'Security', icon: ShieldCheckIcon },
+    { id: 'services', name: 'Services & AI', icon: ServerStackIcon },
   ]
 
   return (
@@ -184,7 +187,10 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {activeTab === 'services' && <ServicesPanel />}
+
       {/* Notifications Tab */}
+      {activeTab === 'notifications' && <DeviceNotificationsCard />}
       {activeTab === 'notifications' && (
         <Card>
           <SectionHeader title="Notification Preferences" subtitle="Choose what you want to be notified about" />

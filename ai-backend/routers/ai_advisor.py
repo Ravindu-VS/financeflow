@@ -17,7 +17,7 @@ from core.auth import get_current_active_user
 from services.llm_service import LLMService
 
 router = APIRouter()
-llm_service = LLMService()
+from services.llm_service import llm_service  # shared instance
 
 
 class ChatMessage(BaseModel):
@@ -198,7 +198,7 @@ async def ai_chat(
         model_used=result.get("model", "gemini"),
         prompt_tokens=result.get("prompt_tokens", 0),
         completion_tokens=result.get("completion_tokens", 0),
-        metadata={"question": request.message}
+        extra_data={"question": request.message}
     )
     db.add(insight)
     await db.commit()
@@ -270,7 +270,7 @@ async def generate_weekly_insights(
             content=ins.get("content", ""),
             confidence=ins.get("confidence", 0.80),
             model_used=ins.get("model", "gemini"),
-            metadata={"auto_generated": True, "week": str(date.today())}
+            extra_data={"auto_generated": True, "week": str(date.today())}
         )
         db.add(insight)
         saved_insights.append(ins)

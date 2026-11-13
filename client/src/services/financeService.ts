@@ -22,6 +22,7 @@ import type { Account, RecurringRule, Transaction, PeriodRange, PeriodSummary } 
 import {
   balanceEffects, buildOccurrence, pendingOccurrences, planLegacyMigration, validateMigrationPlan, MigrationPlan,
   todayKey, summarize, computeBalances, netWorth, startOfMonth, endOfMonth, addMonths, expensesByCategory, isValidDateKey, type LegacyData,
+  normalizeToBase, resolveConcurrentEdit, EditConflictError,
 } from '../lib/finance'
 
 export const MIGRATION_VERSION = 1
@@ -43,7 +44,7 @@ const ref = (uid: string, name: string, id: string) => doc(db, 'users', uid, nam
 function clean<T extends Record<string, any>>(o: T): Record<string, any> {
   const out: Record<string, any> = {}
   for (const [k, v] of Object.entries(o)) {
-    if (v === undefined || k === 'id') continue
+    if (v === undefined || k === 'id' || k === 'originalAmount') continue
     out[k] = v
   }
   return out
@@ -85,8 +86,9 @@ function audit(batch: WriteBatch, uid: string, action: string, entity: string, e
   batch.set(doc(col(uid, 'auditLogs')), { action, entity, entityId, at: serverTimestamp(), ...extra })
 }
 
-function applyBalance(batch: WriteBatch, uid: string, t: Pick<Transaction, 'type' | 'amount' | 'accountId' | 'toAccountId' | 'status'>, sign: 1 | -1, knownAccounts?: Set<string>) {
-  for (const e of balanceEffects(t)) {
+function applyBalance(batch: WriteBatch, uid: string, t: Pick<Transaction, 'type' | 'amount' | 'accountId' | 'toAccountId' | 'status'> & { baseAmount?: number }, sign: 1 | -1, knownAccounts?: Set<string>) {
+  // Account balances are kept in the base currency.
+  for (const e of balanceEffects({ ...t, amount: t.baseAmount ?? t.amount })) {
     if (knownAccounts && !knownAccounts.has(e.accountId)) continue
     batch.set(ref(uid, 'accounts', e.accountId), { balance: increment(sign * e.delta) }, { merge: true })
   }
@@ -111,8 +113,24 @@ export const transactionService = {
   },
 
   /** Edit an existing transaction. Balance effects of the old version are reversed and the new ones applied. */
-  async update(before: Transaction, patch: Partial<Transaction>, opts: { accounts?: Account[] } = {}) {
+  async update(opened: Transaction, patch: Partial<Transaction>, opts: { accounts?: Account[] } = {}) {
     const u = await currentUser()
+    // Concurrent-edit check: rebase onto the stored version (another device or a synced offline
+    // write may have changed it). Same-field conflicts are reported instead of overwritten.
+    let before = opened
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      try {
+        const snap: any = await Promise.race([getDoc(ref(u.uid, 'transactions', opened.id)), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))])
+        const exists = typeof snap.exists === 'function' ? snap.exists() : !!snap.data?.()
+        const stored = exists ? normalizeToBase(fromDoc<Transaction>(opened.id, snap.data())) : null
+        const r = resolveConcurrentEdit(opened, stored, patch)
+        if (r.deleted || r.conflicts.length) throw new EditConflictError(r.conflicts, stored)
+        if (r.base) before = r.base
+      } catch (e) {
+        if (e instanceof EditConflictError) throw e
+        // network/timeout: fall back to the opened version (last write wins)
+      }
+    }
     const after = { ...before, ...patch }
     if (!isValidDateKey(after.date)) throw new Error('Invalid date')
     const batch = writeBatch(db)
@@ -302,10 +320,21 @@ export interface PlanningSettings {
   monthlyBudget?: number
   dismissedSuggestions: string[]
   customCategories: { id: string; label: string; icon: string; color: string }[]
+  baseCurrency: string
+  /** 1 unit of currency = rate units of baseCurrency */
+  fxRates: Record<string, number>
+  fxUpdatedAt?: string
+  notificationsEnabled?: boolean
+  dismissedAlerts?: string[]
+  geminiApiKey?: string
+  geminiModel?: string
+  riskProfile?: { tolerance: 'conservative' | 'moderate' | 'aggressive'; horizonYears: number; experience: 'none' | 'some' | 'experienced' }
+  backendUrl?: string
 }
 
 export const DEFAULT_SETTINGS: PlanningSettings = {
   emergencyReserve: 0, monthlySavingsTarget: 0, monthlyInvestmentTarget: 0, budgetMethod: 'category', dismissedSuggestions: [], customCategories: [],
+  baseCurrency: 'LKR', fxRates: { USD: 300, EUR: 325, GBP: 380, INR: 3.6, AUD: 195, AED: 82 },
 }
 
 export const settingsService = {

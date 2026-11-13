@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal
 from datetime import date, datetime
 import os
 import uuid
@@ -16,17 +16,23 @@ from models.models import User, Income, Expense, Budget, SavingsGoal, Investment
 from database.connection import get_db
 from core.auth import get_current_active_user
 from services.report_generator import generate_pdf_report, generate_excel_report
+from config import settings
 
 router = APIRouter()
-REPORTS_DIR = "reports"
-os.makedirs(REPORTS_DIR, exist_ok=True)
+REPORTS_DIR = settings.REPORTS_DIR  # /tmp/reports on serverless (read-only filesystem elsewhere)
+
+
+MEDIA_TYPES = {"pdf": "application/pdf", "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+               "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "csv": "text/csv"}
 
 
 class ReportRequest(BaseModel):
-    type: str  # 'monthly', 'weekly', 'yearly', 'custom'
-    format: str  # 'pdf', 'excel', 'csv'
+    type: Literal['monthly', 'weekly', 'yearly', 'custom', 'daily', 'quarterly']
+    format: Literal['pdf', 'excel', 'xlsx', 'csv']
     period_start: date
     period_end: date
+    # Return the file in this response (serverless instances don't share a disk between requests)
+    inline: bool = False
 
 
 async def _collect_report_data(user: User, period_start: date, period_end: date, db: AsyncSession) -> dict:
@@ -108,6 +114,9 @@ async def generate_report(
     db: AsyncSession = Depends(get_db)
 ):
     """Generate financial report (PDF/Excel/CSV)"""
+    if request.period_end < request.period_start:
+        raise HTTPException(status_code=422, detail="period_end is before period_start")
+    os.makedirs(REPORTS_DIR, exist_ok=True)
     report_id = str(uuid.uuid4())
     filename = f"finai_report_{current_user.id}_{report_id[:8]}.{request.format}"
     filepath = os.path.join(REPORTS_DIR, filename)
@@ -150,6 +159,8 @@ async def generate_report(
         report.file_size_bytes = os.path.getsize(filepath) if os.path.exists(filepath) else 0
         await db.commit()
 
+        if request.inline:
+            return FileResponse(path=filepath, media_type=MEDIA_TYPES.get(request.format, "application/octet-stream"), filename=filename)
         return {
             "report_id": report_id,
             "status": "ready",
@@ -183,11 +194,9 @@ async def download_report(
     if not os.path.exists(report.file_url):
         raise HTTPException(status_code=404, detail="Report file not found")
 
-    media_types = {"pdf": "application/pdf", "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "csv": "text/csv"}
-    
     return FileResponse(
         path=report.file_url,
-        media_type=media_types.get(report.format, "application/octet-stream"),
+        media_type=MEDIA_TYPES.get(report.format, "application/octet-stream"),
         filename=os.path.basename(report.file_url)
     )
 

@@ -16,6 +16,7 @@ import {
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline'
+import InvestmentAdvisor from './InvestmentAdvisor'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
 import { Timestamp } from 'firebase/firestore'
 
@@ -193,6 +194,8 @@ export default function InvestmentsPage() {
           </p>
         </Card>
       </div>
+
+      <InvestmentAdvisor />
 
       {/* Charts and List */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

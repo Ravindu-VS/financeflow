@@ -146,6 +146,7 @@ async def get_me(current_user: User = Depends(get_current_active_user)):
         "theme": current_user.theme,
         "monthly_income": float(current_user.monthly_income) if current_user.monthly_income else None,
         "roles": [r.name for r in current_user.roles],
+        "is_advisor": any(r.name in ("financial_advisor", "admin") for r in current_user.roles),
         "is_verified": current_user.is_verified,
         "created_at": current_user.created_at.isoformat()
     }

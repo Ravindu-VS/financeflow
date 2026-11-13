@@ -115,7 +115,10 @@ class User(Base):
 
     # Relationships
     family_group  = relationship("FamilyGroup", foreign_keys=[family_group_id], back_populates="members")
-    roles         = relationship("Role", secondary="user_roles", lazy="selectin")
+    # user_roles has two FKs to users (user_id, granted_by) → join path must be explicit
+    roles         = relationship("Role", secondary="user_roles", lazy="selectin",
+                                 primaryjoin="User.id == UserRole.user_id",
+                                 secondaryjoin="Role.id == UserRole.role_id")
     income        = relationship("Income", back_populates="user", cascade="all, delete-orphan")
     expenses      = relationship("Expense", back_populates="user", cascade="all, delete-orphan")
     budgets       = relationship("Budget", back_populates="user", cascade="all, delete-orphan")
@@ -273,7 +276,7 @@ class AIInsight(Base):
     model_used        = Column(String(100))
     prompt_tokens     = Column(Integer)
     completion_tokens = Column(Integer)
-    extra_data        = Column(JSONB)  # renamed from 'metadata' (reserved by SQLAlchemy)
+    extra_data        = Column("metadata", JSONB)  # renamed from 'metadata' (reserved by SQLAlchemy)
     is_dismissed      = Column(Boolean, default=False)
     is_acted_on       = Column(Boolean, default=False)
     created_at        = Column(DateTime(timezone=True), server_default=func.now())
@@ -307,7 +310,7 @@ class AuditLog(Base):
     request_path    = Column(Text)
     response_status = Column(Integer)
     duration_ms     = Column(Integer)
-    extra_data      = Column(JSONB)  # renamed from 'metadata' (reserved by SQLAlchemy)
+    extra_data      = Column("metadata", JSONB)  # renamed from 'metadata' (reserved by SQLAlchemy)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -359,7 +362,7 @@ class Report(Base):
     file_url         = Column(Text)
     file_size_bytes  = Column(Integer)
     status           = Column(String(20), default="pending")
-    extra_data       = Column(JSONB)  # renamed from 'metadata'
+    extra_data       = Column("metadata", JSONB)  # renamed from 'metadata'
     created_at       = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -373,6 +376,6 @@ class Notification(Base):
     channel    = Column(String(20), default="push")
     is_read    = Column(Boolean, default=False)
     action_url = Column(Text)
-    extra_data = Column(JSONB)  # renamed from 'metadata'
+    extra_data = Column("metadata", JSONB)  # renamed from 'metadata'
     sent_at    = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

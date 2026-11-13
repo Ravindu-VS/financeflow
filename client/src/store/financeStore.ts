@@ -7,7 +7,8 @@ import {
 } from '../services/financeService'
 import { budgetService, investmentService, savingsService } from '../services/firebaseService'
 import type { Account, RecurringRule, Transaction, PeriodRange } from '../lib/finance'
-import { addMonths, startOfMonth, todayKey, computeBalances, mapLegacyExpenseCategory } from '../lib/finance'
+import { addMonths, startOfMonth, todayKey, computeBalances, mapLegacyExpenseCategory, registerCustomCategories, normalizeToBase } from '../lib/finance'
+import { setDisplayCurrency } from '../utils/currency'
 
 /** Rolling live window: 13 full months back. Older periods are fetched on demand. */
 export const historyStart = () => addMonths(startOfMonth(todayKey()), -13, 1)
@@ -65,7 +66,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const windowStart = historyStart()
     set({ uid, windowStart, ready: { txs: false, accounts: false, rules: false } })
 
-    unsubs.push(transactionService.subscribeRange(uid, windowStart, (transactions, meta) => {
+    unsubs.push(transactionService.subscribeRange(uid, windowStart, (raw, meta) => {
+      const transactions = raw.map(normalizeToBase)
       set(s => ({ transactions, pendingWrites: meta.pending, fromCache: meta.fromCache, ready: { ...s.ready, txs: true } }))
       maybeSnapshots()
     }, e => set({ error: e.message })))
@@ -84,7 +86,11 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       maybeGenerate()
     }))
 
-    unsubs.push(settingsService.subscribe(uid, settings => set({ settings })))
+    unsubs.push(settingsService.subscribe(uid, settings => {
+      registerCustomCategories(settings.customCategories)
+      setDisplayCurrency(settings.baseCurrency || 'LKR')
+      set({ settings })
+    }))
 
     get().refreshModules()
     get().checkMigration()
@@ -155,7 +161,7 @@ export function usePeriodTransactions(r: PeriodRange): { txs: Transaction[]; loa
   useEffect(() => {
     if (inWindow) return
     let alive = true
-    transactionService.listRange(r).then(txs => alive && setExtra({ key, txs })).catch(console.error)
+    transactionService.listRange(r).then(txs => alive && setExtra({ key, txs: txs.map(normalizeToBase) })).catch(console.error)
     return () => { alive = false }
   }, [key, inWindow])
   const txs = useMemo(() => inWindow ? transactions.filter(t => t.date >= r.start && t.date <= r.end) : (extra?.key === key ? extra.txs : []), [transactions, inWindow, extra, key])

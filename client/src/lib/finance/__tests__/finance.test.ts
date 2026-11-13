@@ -6,7 +6,7 @@ import {
   computeBalances, balancesAsOf, cashFlowStatement, netWorth, availableCash, safeToSpend, nonMonthlyProvisions,
   forecastMonthExpenses, forecastCategory, goalRequiredMonthly,
   detectRecurring, findDuplicates, partitionDuplicates, validateTransaction, dataQuality, subscriptionSpend,
-  parseFinancialText, planLegacyMigration, validateMigrationPlan, analyzeBehavior, generateInsights,
+  parseFinancialText, planLegacyMigration, withBaseAmount, normalizeToBase, toBase, invertRates, makeCustomCategory, registerCustomCategories, categoriesForType, getCategory, validateMigrationPlan, analyzeBehavior, generateInsights,
   toCSV, previewCSVImport, parseCSV,
 } from '..'
 import type { Account, RecurringRule, Transaction } from '..'
@@ -353,7 +353,7 @@ describe('import / export', () => {
   it('CSV round trip with duplicate detection', () => {
     const existing = [tx({ type: 'expense', amount: 850, date: '2026-11-07', category: 'food_dining', description: 'Lunch, "special"' })]
     const csv = toCSV(existing)
-    expect(parseCSV(csv)[1][7]).toBe('Lunch, "special"')
+    expect(parseCSV(csv)[1][8]).toBe('Lunch, "special"')
     const p = previewCSVImport(csv, existing, { accountId: 'bank', today: '2026-11-07' })
     expect(p.duplicates).toHaveLength(1); expect(p.valid).toHaveLength(0)
   })
@@ -365,5 +365,47 @@ describe('import / export', () => {
   })
   it('neutralises formula injection in CSV export', () => {
     expect(toCSV([tx({ type: 'expense', amount: 1, date: '2026-11-01', description: '=HYPERLINK("x")' })])).toContain(`"'=HYPERLINK(""x"")"`)
+  })
+})
+
+describe('custom categories (Other → type your own)', () => {
+  it('creates prefixed ids per kind, reuses existing labels and avoids clashes', () => {
+    const pet = makeCustomCategory('  Pet   care ', 'expense', [])
+    expect(pet).toMatchObject({ id: 'cus_pet_care', label: 'Pet care' })
+    expect(makeCustomCategory('pet care', 'expense', [pet]).id).toBe('cus_pet_care') // reused, case-insensitive
+    expect(makeCustomCategory('Groceries', 'expense', []).id).toBe('groceries')       // maps to the default
+    expect(makeCustomCategory('Tuition classes', 'income', []).id).toBe('inc_tuition_classes')
+    expect(makeCustomCategory('Land', 'investment', []).id).toBe('inv_land')
+  })
+  it('registered categories appear only for their type and resolve labels', () => {
+    registerCustomCategories([{ id: 'cus_pet_care', label: 'Pet care', icon: '🏷️', color: '#000' }, { id: 'inc_tuition', label: 'Tuition', icon: '🏷️', color: '#000' }])
+    expect(categoriesForType('expense').some(c => c.id === 'cus_pet_care')).toBe(true)
+    expect(categoriesForType('income').some(c => c.id === 'cus_pet_care')).toBe(false)
+    expect(categoriesForType('income').some(c => c.id === 'inc_tuition')).toBe(true)
+    expect(getCategory('cus_pet_care').label).toBe('Pet care')
+    registerCustomCategories([])
+  })
+})
+
+describe('multi-currency', () => {
+  const rates = { USD: 300, EUR: 325 }
+  it('freezes fxRate and baseAmount for foreign entries; base entries untouched', () => {
+    expect(withBaseAmount({ amount: 50, currency: 'USD' }, 'LKR', rates)).toMatchObject({ fxRate: 300, baseAmount: 15000 })
+    expect((withBaseAmount({ amount: 50, currency: 'USD', fxRate: 305 } as any, 'LKR', rates) as any).baseAmount).toBe(15250) // manual rate wins
+    const b: any = withBaseAmount({ amount: 850, currency: 'LKR' } as any, 'LKR', rates)
+    expect(b.baseAmount).toBeUndefined(); expect(b.fxRate).toBeUndefined()
+    expect(() => withBaseAmount({ amount: 1, currency: 'JPY' }, 'LKR', rates)).toThrow(/exchange rate/)
+  })
+  it('totals are computed in base currency from normalised transactions', () => {
+    const usd = normalizeToBase(tx({ type: 'income', amount: 100, currency: 'USD', fxRate: 300, baseAmount: 30000, date: '2026-11-01' }))
+    const lkr = normalizeToBase(tx({ type: 'income', amount: 5000, date: '2026-11-02' }))
+    expect(usd).toMatchObject({ amount: 30000, originalAmount: 100 })
+    expect(summarize([usd, lkr]).income).toBe(35000)
+    expect(normalizeToBase(usd)).toBe(usd) // idempotent
+  })
+  it('conversion helpers', () => {
+    expect(toBase(10, 'EUR', 'LKR', rates)).toBe(3250)
+    expect(toBase(10, 'LKR', 'LKR', rates)).toBe(10)
+    expect(invertRates({ USD: 0.003333 }, ['USD']).USD).toBeCloseTo(300.03, 1)
   })
 })

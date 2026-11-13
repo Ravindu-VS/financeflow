@@ -66,14 +66,42 @@ const ALL = [
   SAVINGS_CATEGORY, TRANSFER_CATEGORY, ADJUSTMENT_CATEGORY,
 ] as CategoryDef[]
 
-export function categoriesForType(type: TransactionType, custom: CategoryDef[] = []): CategoryDef[] {
+// ───────── User-defined categories ("Other → type your own") ─────────
+// Ids are prefixed by kind so they never clash with defaults:  cus_* expense · inc_* income · inv_* investment
+let CUSTOM: CategoryDef[] = []
+export function registerCustomCategories(list: CategoryDef[] | undefined) { CUSTOM = Array.isArray(list) ? list.filter(c => c && c.id && c.label) : [] }
+export function getCustomCategories() { return CUSTOM }
+
+export type CategoryKind = 'expense' | 'income' | 'investment'
+export function kindForType(type: TransactionType): CategoryKind | null {
+  if (type === 'income') return 'income'
+  if (type === 'expense' || type === 'refund' || type === 'reimbursement') return 'expense'
+  if (type === 'investment' || type === 'withdrawal') return 'investment'
+  return null
+}
+const PREFIX: Record<CategoryKind, string> = { expense: 'cus_', income: 'inc_', investment: 'inv_' }
+const PALETTE = ['#0ea5e9', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#eab308']
+
+/** Build a custom category from free text (does not persist — caller saves it to settings). */
+export function makeCustomCategory(label: string, kind: CategoryKind, existing: CategoryDef[] = CUSTOM): CategoryDef {
+  const clean = label.trim().replace(/\s+/g, ' ').slice(0, 40)
+  const all = [...EXPENSE_CATEGORY_DEFS, ...INCOME_CATEGORY_DEFS, ...INVESTMENT_CATEGORY_DEFS, ...existing]
+  const same = all.find(c => c.label.toLowerCase() === clean.toLowerCase() && (c.id.startsWith(PREFIX[kind]) || categoriesForType(kind === 'expense' ? 'expense' : kind === 'income' ? 'income' : 'investment', []).some(d => d.id === c.id)))
+  if (same) return same
+  const slug = clean.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'custom'
+  let id = PREFIX[kind] + slug, n = 2
+  while (all.some(c => c.id === id)) id = `${PREFIX[kind]}${slug}_${n++}`
+  return { id, label: clean, icon: '🏷️', color: PALETTE[existing.length % PALETTE.length] }
+}
+
+export function categoriesForType(type: TransactionType, custom: CategoryDef[] = CUSTOM): CategoryDef[] {
   switch (type) {
     case 'income': return [...INCOME_CATEGORY_DEFS, ...custom.filter(c => c.id.startsWith('inc_'))]
     case 'expense':
     case 'refund':
-    case 'reimbursement': return [...EXPENSE_CATEGORY_DEFS, ...custom.filter(c => !c.id.startsWith('inc_'))]
+    case 'reimbursement': return [...EXPENSE_CATEGORY_DEFS, ...custom.filter(c => c.id.startsWith('cus_'))]
     case 'investment':
-    case 'withdrawal': return INVESTMENT_CATEGORY_DEFS
+    case 'withdrawal': return [...INVESTMENT_CATEGORY_DEFS, ...custom.filter(c => c.id.startsWith('inv_'))]
     case 'savings_contribution':
     case 'savings_withdrawal': return [SAVINGS_CATEGORY]
     case 'transfer': return [TRANSFER_CATEGORY]
@@ -82,7 +110,7 @@ export function categoriesForType(type: TransactionType, custom: CategoryDef[] =
 }
 
 export function getCategory(id: string | undefined): CategoryDef {
-  return ALL.find(c => c.id === id) || { id: id || 'other', label: humanize(id || 'Other'), icon: '📦', color: '#6b7280' }
+  return ALL.find(c => c.id === id) || CUSTOM.find(c => c.id === id) || { id: id || 'other', label: humanize(id || 'Other'), icon: '📦', color: '#6b7280' }
 }
 
 export function categoryLabel(id: string | undefined): string {
@@ -135,7 +163,7 @@ const LEGACY_INCOME_MAP: Record<string, string> = {
 export function mapLegacyExpenseCategory(raw: unknown): string {
   const k = String(raw ?? '').trim().toLowerCase()
   if (!k) return 'other'
-  if (EXPENSE_CATEGORY_DEFS.some(c => c.id === k)) return k
+  if (EXPENSE_CATEGORY_DEFS.some(c => c.id === k) || k.startsWith('cus_')) return k
   return LEGACY_EXPENSE_MAP[k] || 'other'
 }
 

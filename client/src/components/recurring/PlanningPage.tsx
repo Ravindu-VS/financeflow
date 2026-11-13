@@ -11,6 +11,7 @@ import {
   type RecurringRule, type Frequency,
 } from '../../lib/finance'
 import { formatCurrency } from '../../utils/currency'
+import CurrencySettings from './CurrencySettings'
 
 const BUDGET_METHODS: { value: PlanningSettings['budgetMethod']; label: string; help: string }[] = [
   { value: 'category', label: 'Category budgets', help: 'Set a limit per category (Budgets page).' },
@@ -155,6 +156,8 @@ export default function PlanningPage() {
           {quality.duplicateGroups.slice(0, 5).map((g, i) => <p key={i} className="text-xs text-gray-500 mt-1">{formatDateKey(g[0].date)} · {g[0].description || g[0].category} · {formatCurrency(g[0].amount)} × {g.length}</p>)}
         </Card>
       </div>
+
+      <CurrencySettings />
 
       {edit && <RuleEditor rule={edit} onClose={() => setEdit(null)} />}
     </div>

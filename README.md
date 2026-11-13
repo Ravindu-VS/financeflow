@@ -38,6 +38,17 @@ npm run test:e2e             # Playwright end-to-end (see report §18)
 firebase deploy --only firestore:rules
 ```
 
+### Vercel frontend deployment
+
+Keep the existing `financeflow-api` Vercel project for the FastAPI backend. Create a separate Vercel project for the frontend using this repository with:
+
+- **Root Directory:** `client`
+- **Framework Preset:** Vite
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+
+The frontend automatically uses `/` on Vercel and `/financeflow/` on GitHub Pages. Add the `VITE_FIREBASE_*` variables from `client/.env` to the Vercel project before deploying.
+
 ---
 
 ## ✨ Enterprise Features

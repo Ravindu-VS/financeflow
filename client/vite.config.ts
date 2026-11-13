@@ -2,8 +2,11 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const isGitHubPagesBuild = process.env.GITHUB_ACTIONS === 'true'
+const appBase = isGitHubPagesBuild ? '/financeflow/' : '/'
+
 export default defineConfig({
-  base: '/financeflow/',
+  base: appBase,
   plugins: [
     react(),
     VitePWA({
@@ -17,8 +20,8 @@ export default defineConfig({
         background_color: '#0f172a',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/financeflow/',
-        start_url: '/financeflow/',
+        scope: appBase,
+        start_url: appBase,
         categories: ['finance', 'business', 'productivity'],
         icons: [
           {
@@ -33,8 +36,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // Heavy on-demand libraries (Excel/PDF export, OCR) are cached when first used, not at install
         globIgnores: ['**/exceljs*.js', '**/jspdf*.js', '**/html2canvas*.js', '**/purify*.js', '**/index.es-*.js', '**/tesseract*.js'],
-        navigateFallback: '/financeflow/index.html',
-        navigateFallbackDenylist: [/^\/financeflow\/__/],
+        navigateFallback: `${appBase}index.html`,
+        navigateFallbackDenylist: [new RegExp(`^${appBase.replace('/', '\\/')}__`)],
         skipWaiting: true,
         clientsClaim: true,
         runtimeCaching: [

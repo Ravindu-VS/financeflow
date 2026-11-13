@@ -8,6 +8,8 @@ from sqlalchemy import select
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime, timezone
+import logging
+from sqlalchemy.exc import SQLAlchemyError
 
 from models.models import User, Role, UserRole
 from database.connection import get_db
@@ -18,6 +20,7 @@ from core.auth import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class RegisterRequest(BaseModel):
@@ -94,8 +97,15 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
 @router.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Authenticate user — WSO2 IS Resource Owner Password flow"""
-    result = await db.execute(select(User).where(User.email == request.email, User.is_active == True))
-    user = result.scalar_one_or_none()
+    try:
+        result = await db.execute(select(User).where(User.email == request.email, User.is_active == True))
+        user = result.scalar_one_or_none()
+    except SQLAlchemyError:
+        logger.exception("Login failed because the user database is unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable"
+        )
 
     if not user or not verify_password(request.password, user.password_hash):
         raise HTTPException(
@@ -104,9 +114,16 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         )
 
     # Update last login
-    user.last_login_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(user)
+    try:
+        user.last_login_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(user)
+    except SQLAlchemyError:
+        logger.exception("Login failed while updating the user's last-login timestamp")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable"
+        )
 
     return _issue_tokens(user)
 

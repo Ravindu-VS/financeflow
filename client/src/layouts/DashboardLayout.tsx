@@ -58,11 +58,11 @@ const navigation = [
 
 // ── Enterprise AI Navigation ──────────────────────────────────────────────────
 const enterpriseNavigation = [
-  { name: '🤖 AI Advisor', href: '/ai-advisor', icon: LightBulbIcon, badge: 'NEW' },
-  { name: '🎙️ Voice', href: '/voice', icon: LightBulbIcon, badge: 'NEW' },
-  { name: '❤️ Health Score', href: '/health-score', icon: ChartPieIcon, badge: 'NEW' },
-  { name: '👔 Advisor Portal', href: '/advisor', icon: UserCircleIcon, badge: 'NEW' },
-  { name: '👨‍👩‍👧‍👦 Family', href: '/family', icon: HomeIcon, badge: 'NEW' },
+  { name: '🤖 AI Advisor', href: '/ai-advisor', icon: LightBulbIcon },
+  { name: '🎙️ Voice', href: '/voice', icon: LightBulbIcon },
+  { name: '❤️ Health Score', href: '/health-score', icon: ChartPieIcon },
+  { name: '👔 Advisor Portal', href: '/advisor', icon: UserCircleIcon },
+  { name: '👨‍👩‍👧‍👦 Family', href: '/family', icon: HomeIcon },
 ]
 
 // Mobile bottom navigation (large touch targets); Quick Add floats above it
@@ -195,9 +195,7 @@ export default function DashboardLayout() {
                 >
                   <span className="text-base">{item.name.split(' ')[0]}</span>
                   <span className="flex-1">{item.name.split(' ').slice(1).join(' ')}</span>
-                  {item.badge && (
-                    <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded-full font-semibold">{item.badge}</span>
-                  )}
+
                 </NavLink>
               ))}
             </div>

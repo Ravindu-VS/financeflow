@@ -6,7 +6,10 @@ import { parseReceiptText, type ReceiptDraft } from '../lib/finance'
 
 export async function scanReceipt(file: Blob, onProgress?: (pct: number) => void): Promise<ReceiptDraft & { text: string }> {
   const { createWorker } = await import('tesseract.js')
+  // Optional self-hosted engine/model (VITE_OCR_BASE); defaults to the public CDN.
+  const base = import.meta.env.VITE_OCR_BASE as string | undefined
   const worker = await createWorker('eng', 1, {
+    ...(base ? { workerPath: `${base}worker.min.js`, corePath: base, langPath: base } : {}),
     logger: (m: any) => { if (m.status === 'recognizing text' && onProgress) onProgress(Math.round(m.progress * 100)) },
   })
   try {

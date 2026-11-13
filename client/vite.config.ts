@@ -2,7 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const isGitHubPagesBuild = process.env.GITHUB_ACTIONS === 'true'
+const isGitHubPagesBuild =
+  process.env.GITHUB_ACTIONS === 'true' && process.env.VERCEL !== '1'
 const appBase = isGitHubPagesBuild ? '/financeflow/' : '/'
 
 export default defineConfig({

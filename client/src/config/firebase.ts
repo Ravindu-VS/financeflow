@@ -2,18 +2,35 @@ import { initializeApp } from 'firebase/app'
 import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserPopupRedirectResolver } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, Firestore } from 'firebase/firestore'
 
-// Values come from VITE_FIREBASE_* (injected by CI / client/.env). The fallbacks keep the
-// existing deployment working; the Firebase web config is public by design — data access
-// is protected by Firestore security rules (see /firestore.rules).
-const env = import.meta.env
-const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || 'AIzaSyBSUGP0sYUxDNdz68X7iIqITSxZAjxueG0',
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || 'financeflow-a6aa0.firebaseapp.com',
-  projectId: env.VITE_FIREBASE_PROJECT_ID || 'financeflow-a6aa0',
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || 'financeflow-a6aa0.firebasestorage.app',
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || '954990958720',
-  appId: env.VITE_FIREBASE_APP_ID || '1:954990958720:web:ec53960e0ff217ced5ee65',
+// Firebase web config for project financeflow-a6aa0. These values are public by design;
+// data access is protected by Firestore security rules (see /firestore.rules).
+//
+// VITE_FIREBASE_* environment values are applied ONLY when they target this same project.
+// Stale CI secrets from an old Firebase project once overrode this config and broke sign-in
+// ("API key not valid"), so env values for any other project are ignored with a warning.
+const DEFAULT_CONFIG = {
+  apiKey: 'AIzaSyBSUGP0sYUxDNdz68X7iIqITSxZAjxueG0',
+  authDomain: 'financeflow-a6aa0.firebaseapp.com',
+  projectId: 'financeflow-a6aa0',
+  storageBucket: 'financeflow-a6aa0.firebasestorage.app',
+  messagingSenderId: '954990958720',
+  appId: '1:954990958720:web:ec53960e0ff217ced5ee65',
 }
+const env = import.meta.env
+const envMatches = env.VITE_FIREBASE_PROJECT_ID === DEFAULT_CONFIG.projectId && !!env.VITE_FIREBASE_API_KEY && !!env.VITE_FIREBASE_APP_ID
+if (env.VITE_FIREBASE_PROJECT_ID && !envMatches) {
+  console.warn(`[firebase] Ignoring VITE_FIREBASE_* for project "${env.VITE_FIREBASE_PROJECT_ID}"; using ${DEFAULT_CONFIG.projectId}.`)
+}
+const firebaseConfig = envMatches
+  ? {
+      apiKey: env.VITE_FIREBASE_API_KEY!,
+      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || DEFAULT_CONFIG.authDomain,
+      projectId: DEFAULT_CONFIG.projectId,
+      storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || DEFAULT_CONFIG.storageBucket,
+      messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || DEFAULT_CONFIG.messagingSenderId,
+      appId: env.VITE_FIREBASE_APP_ID!,
+    }
+  : DEFAULT_CONFIG
 
 const app = initializeApp(firebaseConfig)
 

@@ -30,7 +30,13 @@ if "supabase" in settings.DATABASE_URL or "sslmode=require" in settings.DATABASE
         _ctx.verify_mode = ssl.CERT_NONE
     _connect_args["ssl"] = _ctx
 
-_url = settings.DATABASE_URL.replace("?sslmode=require", "").replace("&sslmode=require", "")
+_url = (
+    settings.DATABASE_URL
+    .replace("?sslmode=require", "")
+    .replace("&sslmode=require", "")
+    .replace("?pgbouncer=true", "")
+    .replace("&pgbouncer=true", "")
+)
 
 if settings.is_serverless:
     # One short-lived function instance per request: no pooling, the pooler does it.

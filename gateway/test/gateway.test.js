@@ -39,6 +39,11 @@ test('rejects unauthenticated and foreign-project tokens', async () => {
   assert.equal(r.status, 401)
 })
 
+test('allows authenticated users to reach advisor status endpoint', async () => {
+  const r = await fetch(`${base}/api/v1/advisor/me`, { headers: { Authorization: `Bearer ${token()}` } })
+  assert.notEqual(r.status, 403)
+})
+
 test('proxies authenticated POST bodies with the full path', async () => {
   const body = { since: '2026-11-01', until: '2026-11-30', transactions: [{ id: 'gw1', type: 'expense', amount: 450, date: '2026-11-07', category: 'food_dining', status: 'cleared', source: 'manual' }] }
   const r = await fetch(`${base}/api/v1/sync/firestore`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` }, body: JSON.stringify(body) })

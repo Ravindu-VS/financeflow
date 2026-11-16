@@ -259,7 +259,8 @@ app.use(validateJWT);
 app.use('/api/v1', defaultLimiter);
 app.use(['/api/v1/ai', '/api/v1/predictions'], aiLimiter);
 app.use('/api/v1/reports', reportLimiter);
-app.use('/api/v1/advisor', requireScope('financial_advisor', 'admin'));
+// Advisor routes perform role checks in the backend. The status, enroll, link,
+// and unlink endpoints are also intentionally available to normal users.
 app.use(backendProxy);
 
 // ─── Gateway Management APIs ──────────────────────────────────────────────────

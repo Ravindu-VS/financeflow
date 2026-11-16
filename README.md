@@ -13,14 +13,46 @@
 |--------|----------------|
 | **API Management** | WSO2 API Manager (Gateway simulation) |
 | **Identity & Security** | WSO2 Identity Server (OAuth2/OIDC/JWT/RBAC) |
-| **AI Integration** | Google Gemini 2.0 Flash + RAG Pipeline |
+| **AI Integration** | Google Gemini 2.5 Flash + RAG Pipeline |
 | **Backend** | Firebase (Auth + Firestore, system of record) · FastAPI (Python 3.11) AI layer |
-| **Database** | Firestore (offline-first) · PostgreSQL 16 for the AI/reporting layer (Express/MongoDB archived) |
+| **Database** | Firestore (offline-first, system of record) · Supabase PostgreSQL for the AI/reporting layer |
 | **Frontend** | React 18 PWA (TypeScript + Tailwind CSS) |
-| **DevOps** | Docker Compose (8 services) |
+| **Hosting** | Vercel (frontend, gateway, FastAPI backend) · GitHub Pages · Supabase |
+| **DevOps** | Docker Compose (8 services) for local development |
 | **Monitoring** | Prometheus + Grafana |
 
 ---
+
+## 🌍 Live deployment
+
+| Service | URL | Hosting |
+|---|---|---|
+| Web app (PWA) | https://financeflow-eight-dun.vercel.app | Vercel (`client/`) |
+| Web app (mirror) | https://ravindu-vs.github.io/financeflow/ | GitHub Pages |
+| API gateway | https://financeflow-gateway.vercel.app — status at `/gateway/health` | Vercel (`gateway/`) |
+| AI backend | https://financeflow-api-six.vercel.app | Vercel (`ai-backend/`, Python 3.12) |
+| Database | Supabase PostgreSQL (encrypted connection through the Supavisor pooler) | Supabase |
+| Auth / data | Firebase Authentication + Firestore | Firebase |
+
+Every push to `main` redeploys the three Vercel projects. Firestore security rules are **not** deployed automatically — after changing `firestore.rules` run:
+
+```bash
+npx firebase-tools deploy --only firestore:rules --project financeflow-a6aa0
+```
+
+Secrets (Gemini key, database URL, allowed origins) live only in Vercel environment variables, never in the repository.
+
+---
+
+## 🆕 What's new (Nov 2026)
+
+- **Loans** — record money you borrowed or lent, repayments with optional interest, due dates and overdue alerts. *Mark as repaid* records the final payment, so the account balance and the amount owed both update; loans can also be closed without money (settled outside the app) or written off. Loans move cash and count in net worth, but are never income or spending.
+- **Sinhala voice input** — switch the voice assistant to සිංහල. Spoken Sinhala amounts (e.g. දාහයි පන්සියයි = 1,500) and words are understood and the transaction is categorised automatically.
+- **Reliable mobile microphone** — the mic no longer gets stuck on "listening" on phones.
+- **Receipt scanning** — on-device OCR fills in amount, date, shop and category for you to confirm.
+- **Themes** — Light, Dark or Match device; text contrast checked automatically in both themes.
+- **Profile picture** in the sidebar, notification centre, budgets/forecast/investment advisor, family accounts and advisor linking.
+- **Smooth updates** — if a new version is deployed while the app is open, it reloads once instead of showing a broken page.
 
 ## 💳 Transaction-centric model (Nov 2026 upgrade)
 
@@ -33,8 +65,9 @@ Every financial event is an independent **transaction**: lunch today, a sudden v
 
 ```bash
 npm ci && npm run dev        # app at http://localhost:3000/financeflow/
-npm test                     # 64 financial-logic unit tests
-npm run test:e2e             # Playwright end-to-end (see report §18)
+npm test                     # 118 financial-logic unit tests (incl. loans, Sinhala)
+npm run test:e2e             # 13 Playwright end-to-end tests (every page, loans, voice, themes, contrast)
+cd ../ai-backend && pytest   # 14 backend tests (sync, family, advisor, loans)
 firebase deploy --only firestore:rules
 ```
 
@@ -54,11 +87,12 @@ The frontend automatically uses `/` on Vercel and `/financeflow/` on GitHub Page
 ## ✨ Enterprise Features
 
 ### 🤖 AI-Powered Features
-- **AI Financial Advisor** — Chat with Google Gemini 2.0 Flash using RAG (Retrieval-Augmented Generation) with your actual financial data as context
+- **AI Financial Advisor** — Chat with Google Gemini 2.5 Flash using RAG (Retrieval-Augmented Generation) with your actual financial data as context
 - **ML Expense Predictions** — Linear regression forecasting of expenses for 3 months ahead with confidence intervals
 - **Financial Health Score** — 6-dimension scoring engine (0-100) with A+ to F grades
 - **Fraud Detection** — Statistical Z-Score anomaly detection per expense category
-- **Voice Assistant** — Web Speech API + NLP for hands-free transaction entry
+- **Voice Assistant** — Web Speech API + NLP for hands-free transaction entry, in English and Sinhala
+- **Receipt OCR** — scan a receipt to pre-fill a transaction
 
 ### 🛡️ Enterprise Security (WSO2 IS Pattern)
 - OAuth2 / OpenID Connect token flow
@@ -79,6 +113,7 @@ The frontend automatically uses `/` on Vercel and `/financeflow/` on GitHub Page
 - Budget management with real-time overspend alerts
 - Savings goals with contribution tracking
 - Investment portfolio (stocks, crypto, FD, gold, mutual funds)
+- Loans borrowed and lent, with repayments, interest and due-date alerts
 
 ### 📑 Enterprise Reports
 - PDF reports using ReportLab (professional enterprise formatting)
@@ -87,7 +122,8 @@ The frontend automatically uses `/` on Vercel and `/financeflow/` on GitHub Page
 
 ### 👨‍👩‍👧‍👦 Multi-User Features
 - Financial Advisor portal (view assigned clients, monitor health)
-- Family group accounts (shared wallets)
+- Family groups: create or join with a code, shared monthly summary
+- Advisor linking by consent code (the user can unlink at any time)
 
 ---
 
@@ -247,12 +283,12 @@ This project demonstrates the following WSO2-relevant skills:
 Frontend:   React 18 · TypeScript · Vite · Tailwind CSS · Zustand · Recharts
 Gateway:    Node.js · Express · JWT · Rate Limiting · http-proxy-middleware
 Backend:    FastAPI · Python 3.11 · SQLAlchemy 2.0 async · Pydantic v2
-AI/ML:      Google Gemini 2.0 Flash · OpenAI GPT-4o-mini · NumPy · scikit-learn
+AI/ML:      Google Gemini 2.5 Flash · OpenAI GPT-4o-mini · NumPy · scikit-learn
 NLP:        Custom regex-based intent extraction
 Reports:    ReportLab (PDF) · openpyxl (Excel)
-Database:   PostgreSQL 16 · asyncpg · Redis 7
+Database:   Firestore · Supabase PostgreSQL · asyncpg · Redis 7 (local)
 DevOps:     Docker · Docker Compose · Prometheus · Grafana
-Auth:       JWT/OIDC (WSO2 IS pattern) · bcrypt · python-jose
+Auth:       Firebase Auth (RS256 ID tokens verified by the backend) · JWT/OIDC (WSO2 IS pattern)
 ```
 
 ---

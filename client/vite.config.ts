@@ -40,6 +40,7 @@ export default defineConfig({
         navigateFallback: `${appBase}index.html`,
         navigateFallbackDenylist: [new RegExp(`^${appBase.replace('/', '\\/')}__`)],
         skipWaiting: true,
+        cleanupOutdatedCaches: true,
         clientsClaim: true,
         runtimeCaching: [
           {

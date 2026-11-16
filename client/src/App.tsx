@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import { useEffect, Suspense, lazy } from 'react'
+import { useEffect, Suspense } from 'react'
+import { lazyRetry as lazy } from './utils/lazyRetry'
 import { useAuthStore } from './store/authStore'
 import { useThemeStore, applyTheme } from './store/themeStore'
 import { useEnterpriseStore } from './store/enterpriseStore'

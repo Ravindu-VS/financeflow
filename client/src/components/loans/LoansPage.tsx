@@ -16,6 +16,7 @@ export default function LoansPage() {
   const [showClosed, setShowClosed] = useState(false)
   const [creating, setCreating] = useState<Tab | null>(null)
   const [repaying, setRepaying] = useState<LoanStatus | null>(null)
+  const [fullRepay, setFullRepay] = useState(false)
 
   const statuses = useMemo(() => loans.map(l => loanStatus(l, loanTxs, today)).sort((a, b) =>
     (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1) || (a.loan.dueDate || '9999').localeCompare(b.loan.dueDate || '9999')), [loans, loanTxs, today])
@@ -111,8 +112,8 @@ export default function LoansPage() {
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {s.status === 'active' ? (<>
-                    <button className="btn btn-primary py-1.5 text-sm" onClick={() => setRepaying(s)}>{s.loan.direction === 'borrowed' ? 'Record repayment' : 'Record money received'}</button>
-                    <button className="btn btn-secondary py-1.5 text-sm" onClick={() => close(s, 'repaid')}>Mark as repaid</button>
+                    <button className="btn btn-primary py-1.5 text-sm" onClick={() => { setFullRepay(false); setRepaying(s) }}>{s.loan.direction === 'borrowed' ? 'Record repayment' : 'Record money received'}</button>
+                    <button className="btn btn-secondary py-1.5 text-sm" onClick={() => { if (s.outstanding > 0) { setFullRepay(true); setRepaying(s) } else close(s, 'repaid') }}>Mark as repaid</button>
                     {s.loan.direction === 'lent' && <button className="btn btn-secondary py-1.5 text-sm" onClick={() => close(s, 'written_off')}>Write off</button>}
                   </>) : <button className="btn btn-secondary py-1.5 text-sm" onClick={() => reopen(s)}>Reopen</button>}
                   <button className="btn btn-secondary py-1.5 text-sm text-red-600 dark:text-red-400" onClick={() => remove(s)}>Delete</button>
@@ -124,7 +125,7 @@ export default function LoansPage() {
       </Card>
 
       {creating && <NewLoanModal direction={creating} onClose={() => setCreating(null)} />}
-      {repaying && <RepayModal status={repaying} onClose={() => setRepaying(null)} />}
+      {repaying && <RepayModal status={repaying} full={fullRepay} onClose={() => setRepaying(null)} onCloseWithoutPayment={() => { const st = repaying!; setRepaying(null); close(st, 'repaid') }} />}
     </div>
   )
 }
@@ -170,7 +171,7 @@ function NewLoanModal({ direction, onClose }: { direction: Tab; onClose: () => v
   )
 }
 
-function RepayModal({ status, onClose }: { status: LoanStatus; onClose: () => void }) {
+function RepayModal({ status, full = false, onClose, onCloseWithoutPayment }: { status: LoanStatus; full?: boolean; onClose: () => void; onCloseWithoutPayment?: () => void }) {
   const { accounts } = useFinanceStore()
   const spendable = accounts.filter(a => !a.archived)
   const borrowed = status.loan.direction === 'borrowed'
@@ -187,11 +188,11 @@ function RepayModal({ status, onClose }: { status: LoanStatus; onClose: () => vo
     } catch (err: any) { toast.error(err.message) } finally { setSaving(false) }
   }
   return (
-    <Modal isOpen onClose={onClose} title={borrowed ? `Repay ${status.loan.counterparty}` : `${status.loan.counterparty} paid you back`}>
+    <Modal isOpen onClose={onClose} title={full ? `Mark as fully repaid — ${status.loan.counterparty}` : borrowed ? `Repay ${status.loan.counterparty}` : `${status.loan.counterparty} paid you back`}>
       <form onSubmit={submit} className="space-y-3">
         <p className="text-sm text-gray-600 dark:text-gray-300">Outstanding: <b className="tabular-nums">{formatCurrency(status.outstanding)}</b></p>
         <div className="grid grid-cols-2 gap-3">
-          <label className="block"><span className="label">Principal amount</span><input className="input" required type="number" min="0.01" step="0.01" max={status.outstanding} value={f.amount} onChange={e => set('amount', e.target.value)} /></label>
+          <label className="block"><span className="label">Principal amount</span><input className="input" required type="number" min="0.01" step="0.01" max={status.outstanding} value={f.amount} readOnly={full} onChange={e => set('amount', e.target.value)} /></label>
           <label className="block"><span className="label">{borrowed ? 'Interest paid (optional)' : 'Interest received (optional)'}</span><input className="input" type="number" min="0" step="0.01" value={f.interest} onChange={e => set('interest', e.target.value)} /></label>
           <label className="block"><span className="label">Date</span><input className="input" type="date" required max={todayKey()} value={f.date} onChange={e => set('date', e.target.value)} /></label>
           <label className="block"><span className="label">{borrowed ? 'Paid from' : 'Received into'}</span>
@@ -200,8 +201,11 @@ function RepayModal({ status, onClose }: { status: LoanStatus; onClose: () => vo
               <option value="">Not from an account I track</option>
             </select></label>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{borrowed ? 'The principal reduces what you owe. Interest is recorded as an expense.' : 'The principal reduces what you are owed. Interest is recorded as income.'}</p>
-        <div className="flex justify-end gap-2 pt-2"><button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save repayment'}</button></div>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{full
+          ? (borrowed ? `Records the final payment of ${formatCurrency(status.outstanding)}: it is taken out of the account you choose, what you owe drops to zero and the loan is closed.` : `Records ${formatCurrency(status.outstanding)} coming back: it is added to the account you choose, what you are owed drops to zero and the loan is closed.`)
+          : (borrowed ? 'The principal reduces what you owe. Interest is recorded as an expense.' : 'The principal reduces what you are owed. Interest is recorded as income.')}</p>
+        {full && onCloseWithoutPayment && <button type="button" className="text-xs text-primary-600 dark:text-primary-400 underline" onClick={onCloseWithoutPayment}>Settled outside the app? Close it without recording money</button>}
+        <div className="flex justify-end gap-2 pt-2"><button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : full ? 'Mark as repaid' : 'Save repayment'}</button></div>
       </form>
     </Modal>
   )

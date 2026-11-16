@@ -18,11 +18,11 @@ import {
 } from 'firebase/firestore'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { db, auth } from '../config/firebase'
-import type { Account, RecurringRule, Transaction, PeriodRange, PeriodSummary } from '../lib/finance'
+import type { Account, RecurringRule, Transaction, PeriodRange, PeriodSummary, Loan } from '../lib/finance'
 import {
   balanceEffects, buildOccurrence, pendingOccurrences, planLegacyMigration, validateMigrationPlan, MigrationPlan,
   todayKey, summarize, computeBalances, netWorth, startOfMonth, endOfMonth, addMonths, expensesByCategory, isValidDateKey, type LegacyData,
-  normalizeToBase, resolveConcurrentEdit, EditConflictError,
+  normalizeToBase, resolveConcurrentEdit, EditConflictError, loanTotalsAsOf,
 } from '../lib/finance'
 
 export const MIGRATION_VERSION = 1
@@ -249,6 +249,85 @@ export const accountService = {
 
 // ───────────────────────── recurring rules ─────────────────────────
 
+// ───────────────────────── Loans ─────────────────────────
+// A loan document + ordinary transactions linked by loanId (borrowed/lent amount, repayments, interest).
+export const loanService = {
+  subscribe(uid: string, cb: (loans: Loan[]) => void): Unsubscribe {
+    return onSnapshot(col(uid, 'loans'), s => cb(s.docs.map(d => fromDoc<Loan>(d.id, d.data()))), onListenError('loans'))
+  },
+  /** Every loan-linked transaction, however old (loan balances must not depend on the history window). */
+  subscribeTransactions(uid: string, cb: (txs: Transaction[]) => void): Unsubscribe {
+    return onSnapshot(query(col(uid, 'transactions'), where('loanId', '>', '')), s => cb(s.docs.map(d => normalizeToBase(fromDoc<Transaction>(d.id, d.data())))), onListenError('loanTransactions'))
+  },
+  /** Create the loan and the transaction that moves the money (cash in when borrowed, out when lent). */
+  async create(loan: Omit<Loan, 'id' | 'status'>, accountId: string | undefined, accounts?: Account[]) {
+    const u = await currentUser()
+    if (!isValidDateKey(loan.startDate)) throw new Error('Invalid date')
+    if (!(Number(loan.principal) > 0)) throw new Error('Enter the loan amount')
+    const id = doc(col(u.uid, 'loans')).id
+    const txId = doc(col(u.uid, 'transactions')).id
+    const batch = writeBatch(db)
+    batch.set(ref(u.uid, 'loans', id), { ...clean({ ...loan, principal: Math.round(Number(loan.principal) * 100) / 100 }), status: 'active', createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+    const t: NewTransaction = {
+      type: loan.direction === 'borrowed' ? 'loan_received' : 'loan_given', amount: Number(loan.principal), currency: loan.currency || 'LKR',
+      date: loan.startDate, category: loan.direction === 'borrowed' ? 'loan_borrowed' : 'loan_lent', accountId, loanId: id,
+      description: loan.direction === 'borrowed' ? `Loan from ${loan.counterparty}` : `Lent to ${loan.counterparty}`, status: 'cleared', source: 'manual',
+    } as NewTransaction
+    batch.set(ref(u.uid, 'transactions', txId), { ...clean(t), amount: Math.round(Number(t.amount) * 100) / 100, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+    applyBalance(batch, u.uid, t, 1, accounts ? new Set(accounts.map(a => a.id)) : undefined)
+    audit(batch, u.uid, 'create', 'loan', id, { direction: loan.direction, amount: t.amount })
+    await commit(batch)
+    return id
+  },
+  /**
+   * Record a repayment (you paying back, or someone paying you back). Optional interest is a separate
+   * expense (borrowed) or income (lent). When the principal is fully repaid the loan is closed.
+   */
+  async repay(loan: Loan, p: { amount: number; interest?: number; date: string; accountId?: string; note?: string }, outstandingBefore: number, accounts?: Account[]) {
+    const u = await currentUser()
+    if (!isValidDateKey(p.date)) throw new Error('Invalid date')
+    const amount = Math.round(Number(p.amount) * 100) / 100
+    if (!(amount > 0)) throw new Error('Enter the repayment amount')
+    if (amount > outstandingBefore + 0.005) throw new Error(`That is more than the ${outstandingBefore.toLocaleString()} still outstanding`)
+    const known = accounts ? new Set(accounts.map(a => a.id)) : undefined
+    const batch = writeBatch(db)
+    const borrowed = loan.direction === 'borrowed'
+    const mk = (t: NewTransaction) => {
+      const id = doc(col(u.uid, 'transactions')).id
+      batch.set(ref(u.uid, 'transactions', id), { ...clean(t), createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+      applyBalance(batch, u.uid, t, 1, known)
+    }
+    mk({ type: borrowed ? 'loan_repayment' : 'loan_collected', amount, currency: loan.currency || 'LKR', date: p.date, accountId: p.accountId, loanId: loan.id,
+      category: borrowed ? 'loan_repaid' : 'loan_collected', description: p.note || (borrowed ? `Repayment to ${loan.counterparty}` : `Repaid by ${loan.counterparty}`), status: 'cleared', source: 'manual' } as NewTransaction)
+    const interest = Math.round((Number(p.interest) || 0) * 100) / 100
+    if (interest > 0) mk({ type: borrowed ? 'expense' : 'income', amount: interest, currency: loan.currency || 'LKR', date: p.date, accountId: p.accountId, loanId: loan.id,
+      category: borrowed ? 'loan_interest' : 'interest', description: `Interest — ${loan.counterparty}`, status: 'cleared', source: 'manual' } as NewTransaction)
+    const closes = amount >= outstandingBefore - 0.005
+    batch.set(ref(u.uid, 'loans', loan.id), { updatedAt: serverTimestamp(), ...(closes ? { status: 'repaid', closedDate: p.date } : {}) }, { merge: true })
+    audit(batch, u.uid, 'update', 'loan', loan.id, { repayment: amount, interest, closed: closes })
+    await commit(batch)
+    return { closed: closes }
+  },
+  /** Close the loan without moving money (settled outside the app, or forgiven / written off). */
+  async setStatus(loan: Loan, status: Loan['status'], date = todayKey()) {
+    const u = await currentUser()
+    const batch = writeBatch(db)
+    batch.set(ref(u.uid, 'loans', loan.id), { status, closedDate: status === 'active' ? deleteField() : date, updatedAt: serverTimestamp() }, { merge: true })
+    audit(batch, u.uid, 'update', 'loan', loan.id, { status })
+    return commit(batch)
+  },
+  /** Delete the loan and every transaction linked to it (reversing their balance effects). */
+  async remove(loan: Loan, linked: Transaction[], accounts?: Account[]) {
+    const u = await currentUser()
+    const known = accounts ? new Set(accounts.map(a => a.id)) : undefined
+    const batch = writeBatch(db)
+    for (const t of linked) { batch.delete(ref(u.uid, 'transactions', t.id)); applyBalance(batch, u.uid, t, -1, known) }
+    batch.delete(ref(u.uid, 'loans', loan.id))
+    audit(batch, u.uid, 'delete', 'loan', loan.id, { transactions: linked.length })
+    return commit(batch)
+  },
+}
+
 export const recurringService = {
   subscribe(uid: string, cb: (r: RecurringRule[]) => void): Unsubscribe {
     return onSnapshot(col(uid, 'recurringRules'), s => cb(s.docs.map(d => fromDoc<RecurringRule>(d.id, d.data()))), onListenError('recurringRules'))
@@ -359,7 +438,7 @@ export const snapshotService = {
    * Month-end processing, run lazily on app start (no server cron needed): for each completed
    * month in the last 12 without a snapshot, store income/expense/savings/investment/net worth.
    */
-  async ensureSnapshots(txs: Transaction[], accounts: Account[], holdingsValue: number, budgets: { category: string; amount: number }[], today = todayKey()) {
+  async ensureSnapshots(txs: Transaction[], accounts: Account[], holdingsValue: number, budgets: { category: string; amount: number }[], today = todayKey(), loans: Loan[] = [], loanTxs: Transaction[] = []) {
     if (!txs.length) return 0
     const u = await currentUser()
     const existing = new Set((await this.list()).map(s => s.month))
@@ -378,7 +457,7 @@ export const snapshotService = {
       const budgetPerf = budgets.map(b => ({ category: b.category, budget: b.amount, spent: cats.find(c => c.category === b.category)?.total || 0 }))
       batch.set(ref(u.uid, 'snapshots', month), {
         month, ...s,
-        netWorth: netWorth(accounts, bal, holdingsValue).netWorth,
+        netWorth: netWorth(accounts, bal, holdingsValue, loanTotalsAsOf(loans, loanTxs, end)).netWorth,
         budgetPerformance: budgetPerf,
         topCategories: cats.slice(0, 5),
         createdAt: serverTimestamp(),

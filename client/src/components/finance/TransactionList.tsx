@@ -12,12 +12,16 @@ export const TYPE_META: Record<string, { label: string; sign: '+' | '-' | '↔' 
   expense: { label: 'Expense', sign: '-', cls: 'text-red-600 dark:text-red-400' },
   refund: { label: 'Refund', sign: '+', cls: 'text-teal-600 dark:text-teal-400' },
   reimbursement: { label: 'Reimbursement', sign: '+', cls: 'text-teal-600 dark:text-teal-400' },
-  transfer: { label: 'Transfer', sign: '↔', cls: 'text-slate-500' },
+  transfer: { label: 'Transfer', sign: '↔', cls: 'text-slate-500 dark:text-slate-400' },
   savings_contribution: { label: 'Saved', sign: '', cls: 'text-emerald-600 dark:text-emerald-400' },
   savings_withdrawal: { label: 'Savings withdrawal', sign: '', cls: 'text-amber-600' },
   investment: { label: 'Invested', sign: '', cls: 'text-blue-600 dark:text-blue-400' },
   withdrawal: { label: 'Investment withdrawal', sign: '', cls: 'text-amber-600' },
-  adjustment: { label: 'Adjustment', sign: '', cls: 'text-gray-500' },
+  adjustment: { label: 'Adjustment', sign: '', cls: 'text-gray-500 dark:text-gray-400' },
+  loan_received: { label: 'Loan received', sign: '', cls: 'text-orange-600 dark:text-orange-400' },
+  loan_repayment: { label: 'Loan repayment', sign: '', cls: 'text-orange-600 dark:text-orange-400' },
+  loan_given: { label: 'Money lent', sign: '', cls: 'text-violet-600 dark:text-violet-400' },
+  loan_collected: { label: 'Loan collected', sign: '', cls: 'text-violet-600 dark:text-violet-400' },
 }
 
 export function TransactionRow({ t, compact }: { t: Transaction; compact?: boolean }) {

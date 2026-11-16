@@ -49,7 +49,7 @@ export default function AIChatPage() {
   const getContext = () => buildFinancialContext({
     transactions: fin.transactions, rules: fin.rules, budgets: fin.budgets,
     goals: pd.goalProgress.map(g => ({ name: g.name, targetAmount: Number(g.targetAmount) || 0, currentAmount: Number(g.currentAmount) || 0, deadline: g.deadline })),
-    safeToSpend: pd.safeToSpend, netWorth: pd.netWorth.netWorth,
+    safeToSpend: pd.safeToSpend, netWorth: pd.netWorth.netWorth, loans: fin.loans, loanTxs: fin.loanTxs,
   })
 
   useEffect(() => {
@@ -140,7 +140,7 @@ export default function AIChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] lg:h-[calc(100vh-7rem)] bg-gray-900 rounded-xl overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-8rem)] lg:h-[calc(100vh-7rem)] bg-white dark:bg-gray-900 rounded-xl overflow-hidden">
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 border-b border-purple-500/30 p-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -182,7 +182,7 @@ export default function AIChatPage() {
 
             <div className={`max-w-[80%] space-y-2 ${msg.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
               {msg.insight_type && msg.role === 'assistant' && (
-                <div className={`text-xs px-3 py-1 rounded-full bg-gradient-to-r ${insightColors[msg.insight_type] || insightColors.general} text-white font-medium inline-flex items-center gap-1`}>
+                <div className={`text-xs px-3 py-1 rounded-full bg-gradient-to-r ${insightColors[msg.insight_type] || insightColors.general} text-gray-900 dark:text-white font-medium inline-flex items-center gap-1`}>
                   {insightIcons[msg.insight_type]} {msg.insight_type.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
                   {msg.confidence ? <span className="opacity-75">· {Math.round(msg.confidence * 100)}% confidence</span> : null}{msg.model && <span className="opacity-75"> · {msg.model === "on-device" ? "on-device answer" : msg.model}</span>}
                 </div>
@@ -191,7 +191,7 @@ export default function AIChatPage() {
               <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                 msg.role === 'user'
                   ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-tr-sm shadow-lg shadow-blue-500/20'
-                  : 'bg-gray-800 border border-gray-700/50 text-gray-100 rounded-tl-sm shadow-lg'
+                  : 'bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700/50 text-gray-900 dark:text-gray-100 rounded-tl-sm shadow-lg'
               }`}>
                 <div dangerouslySetInnerHTML={{ __html: formatContent(msg.content) }} />
               </div>
@@ -202,7 +202,7 @@ export default function AIChatPage() {
                     <button
                       key={i}
                       onClick={() => sendMessage(s)}
-                      className="text-xs bg-purple-900/50 border border-purple-500/30 text-purple-300 hover:text-white hover:bg-purple-800/60 px-3 py-1.5 rounded-full transition-all duration-200 hover:border-purple-400/50"
+                      className="text-xs bg-purple-50 dark:bg-purple-900/50 border border-purple-500/30 text-purple-700 dark:text-purple-300 hover:text-gray-900 dark:hover:text-white hover:bg-purple-100 dark:hover:bg-purple-800/60 px-3 py-1.5 rounded-full transition-all duration-200 hover:border-purple-400/50"
                     >
                       {s}
                     </button>
@@ -220,9 +220,9 @@ export default function AIChatPage() {
         {isLoading && (
           <div className="flex gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-lg">🤖</div>
-            <div className="bg-gray-800 border border-gray-700/50 rounded-2xl rounded-tl-sm px-4 py-3">
+            <div className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700/50 rounded-2xl rounded-tl-sm px-4 py-3">
               <div className="flex gap-1.5 items-center">
-                <span className="text-gray-400 text-sm mr-1">FinAI is thinking</span>
+                <span className="text-gray-600 dark:text-gray-400 text-sm mr-1">FinAI is thinking</span>
                 {[0, 1, 2].map(i => (
                   <div key={i} className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
@@ -243,7 +243,7 @@ export default function AIChatPage() {
               <button
                 key={i}
                 onClick={() => sendMessage(q)}
-                className="text-xs bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-700 hover:border-purple-500/50 px-3 py-1.5 rounded-lg transition-all duration-200"
+                className="text-xs bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 hover:border-purple-500/50 px-3 py-1.5 rounded-lg transition-all duration-200"
               >
                 {q}
               </button>
@@ -253,8 +253,8 @@ export default function AIChatPage() {
       )}
 
       {/* Input Area */}
-      <div className="p-4 bg-gray-900 border-t border-gray-800 max-w-4xl mx-auto w-full">
-        <div className="flex gap-2 bg-gray-800 border border-gray-700 rounded-2xl p-2 focus-within:border-purple-500/50 transition-colors">
+      <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 max-w-4xl mx-auto w-full">
+        <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-2 focus-within:border-purple-500/50 transition-colors">
           <input
             ref={inputRef}
             type="text"
@@ -262,7 +262,7 @@ export default function AIChatPage() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
             placeholder="Ask FinAI anything about your finances..."
-            className="flex-1 bg-transparent text-white placeholder-gray-500 text-sm px-2 outline-none"
+            className="flex-1 bg-transparent text-gray-900 dark:text-white placeholder-gray-500 text-sm px-2 outline-none"
             disabled={isLoading}
           />
           <button

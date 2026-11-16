@@ -20,11 +20,37 @@ export type TransactionType =
   | 'refund'                // contra-expense: reduces net expenses
   | 'reimbursement'         // contra-expense: reduces net expenses
   | 'adjustment'            // balance correction, never income/expense
+  | 'loan_received'         // you borrowed: cash in, creates a debt (not income)
+  | 'loan_repayment'        // you paid back principal: cash out, reduces the debt (not an expense)
+  | 'loan_given'            // you lent: cash out, creates money owed to you (not an expense)
+  | 'loan_collected'        // you were repaid: cash in, reduces what you're owed (not income)
 
 export const TRANSACTION_TYPES: TransactionType[] = [
   'income', 'expense', 'transfer', 'investment', 'withdrawal',
-  'savings_contribution', 'savings_withdrawal', 'refund', 'reimbursement', 'adjustment'
+  'savings_contribution', 'savings_withdrawal', 'refund', 'reimbursement', 'adjustment',
+  'loan_received', 'loan_repayment', 'loan_given', 'loan_collected',
 ]
+
+export const LOAN_TYPES: TransactionType[] = ['loan_received', 'loan_repayment', 'loan_given', 'loan_collected']
+
+/** A loan you took (borrowed) or gave (lent). Money movements are ordinary transactions with `loanId`. */
+export interface Loan {
+  id: string
+  direction: 'borrowed' | 'lent'
+  /** Lender (bank, person) or borrower */
+  counterparty: string
+  principal: number
+  currency: string
+  startDate: string
+  dueDate?: string
+  /** Annual interest rate in %, informational */
+  interestRate?: number
+  status: 'active' | 'repaid' | 'written_off'
+  closedDate?: string
+  notes?: string
+  createdAt?: string
+  updatedAt?: string
+}
 
 export type TransactionSource = 'manual' | 'voice' | 'imported' | 'api' | 'bank_sync' | 'ai' | 'recurring' | 'migration'
 export type TransactionStatus = 'cleared' | 'pending' | 'void'
@@ -61,6 +87,8 @@ export interface Transaction {
   receiptUrl?: string
   recurrenceId?: string
   goalId?: string
+  /** Loan this money movement belongs to (loan_* types and loan interest expenses) */
+  loanId?: string
   investmentId?: string
   isEssential?: boolean
   nature?: ExpenseNature
@@ -157,7 +185,10 @@ export interface PeriodSummary {
   investments: number       // invested - withdrawn
   transfers: number         // informational only — never income/expense
   netCashFlow: number       // income - netExpenses
-  availableCashChange: number // netCashFlow - savings - investments
+  availableCashChange: number // netCashFlow - savings - investments + loanNet
+  /** Loan money in (borrowed, collected back) and out (lent, repaid principal) — never income/expense */
+  loanInflow: number
+  loanOutflow: number
   savingsRate: number       // (savings + investments) / income * 100
   surplusRate: number       // netCashFlow / income * 100
   count: number

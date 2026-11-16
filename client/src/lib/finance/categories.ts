@@ -60,10 +60,18 @@ export const INVESTMENT_CATEGORY_DEFS: CategoryDef[] = [
 export const SAVINGS_CATEGORY = { id: 'savings', label: 'Savings', icon: '🐷', color: '#10b981' }
 export const TRANSFER_CATEGORY = { id: 'transfer', label: 'Transfer', icon: '🔁', color: '#64748b' }
 export const ADJUSTMENT_CATEGORY = { id: 'adjustment', label: 'Adjustment', icon: '⚖️', color: '#64748b' }
+export const LOAN_CATEGORIES: CategoryDef[] = [
+  { id: 'loan_borrowed', label: 'Loan borrowed', icon: '🏦', color: '#f97316' },
+  { id: 'loan_repaid', label: 'Loan repayment', icon: '✅', color: '#16a34a' },
+  { id: 'loan_lent', label: 'Money lent', icon: '🤝', color: '#8b5cf6' },
+  { id: 'loan_collected', label: 'Loan collected', icon: '💰', color: '#0ea5e9' },
+  { id: 'loan_interest', label: 'Loan interest', icon: '📈', color: '#ef4444' },
+]
+export const LOAN_TYPE_CATEGORY: Record<string, string> = { loan_received: 'loan_borrowed', loan_repayment: 'loan_repaid', loan_given: 'loan_lent', loan_collected: 'loan_collected' }
 
 const ALL = [
   ...EXPENSE_CATEGORY_DEFS, ...INCOME_CATEGORY_DEFS, ...INVESTMENT_CATEGORY_DEFS,
-  SAVINGS_CATEGORY, TRANSFER_CATEGORY, ADJUSTMENT_CATEGORY,
+  SAVINGS_CATEGORY, TRANSFER_CATEGORY, ADJUSTMENT_CATEGORY, ...LOAN_CATEGORIES,
 ] as CategoryDef[]
 
 // ───────── User-defined categories ("Other → type your own") ─────────
@@ -106,6 +114,10 @@ export function categoriesForType(type: TransactionType, custom: CategoryDef[] =
     case 'savings_withdrawal': return [SAVINGS_CATEGORY]
     case 'transfer': return [TRANSFER_CATEGORY]
     case 'adjustment': return [ADJUSTMENT_CATEGORY]
+    case 'loan_received':
+    case 'loan_repayment':
+    case 'loan_given':
+    case 'loan_collected': return LOAN_CATEGORIES.filter(c => c.id === LOAN_TYPE_CATEGORY[type])
   }
 }
 

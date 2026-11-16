@@ -2,11 +2,11 @@ import { create } from 'zustand'
 import { useEffect, useMemo, useState } from 'react'
 import type { Unsubscribe } from 'firebase/firestore'
 import {
-  accountService, recurringService, settingsService, transactionService, snapshotService, migrationService,
+  accountService, recurringService, loanService, settingsService, transactionService, snapshotService, migrationService,
   DEFAULT_SETTINGS, type PlanningSettings, type MigrationRecord,
 } from '../services/financeService'
 import { budgetService, investmentService, savingsService } from '../services/firebaseService'
-import type { Account, RecurringRule, Transaction, PeriodRange } from '../lib/finance'
+import type { Account, RecurringRule, Transaction, PeriodRange, Loan } from '../lib/finance'
 import { addMonths, startOfMonth, todayKey, computeBalances, mapLegacyExpenseCategory, registerCustomCategories, normalizeToBase } from '../lib/finance'
 import { setDisplayCurrency } from '../utils/currency'
 
@@ -30,6 +30,9 @@ interface FinanceState {
   holdings: Holding[]
   goals: Goal[]
   budgets: BudgetDoc[]
+  loans: Loan[]
+  /** All loan-linked transactions (any date) */
+  loanTxs: Transaction[]
   migration: MigrationRecord | null
   needsMigration: boolean
   error: string | null
@@ -55,6 +58,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   holdings: [],
   goals: [],
   budgets: [],
+  loans: [],
+  loanTxs: [],
   migration: null,
   needsMigration: false,
   error: null,
@@ -92,6 +97,9 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       set({ settings })
     }))
 
+    unsubs.push(loanService.subscribe(uid, loans => set({ loans })))
+    unsubs.push(loanService.subscribeTransactions(uid, loanTxs => set({ loanTxs })))
+
     get().refreshModules()
     get().checkMigration()
 
@@ -103,7 +111,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   stop: () => {
     unsubs.forEach(u => u())
     unsubs = []
-    set({ uid: null, transactions: [], accounts: [], rules: [], holdings: [], goals: [], budgets: [], migration: null, needsMigration: false })
+    set({ uid: null, transactions: [], accounts: [], rules: [], holdings: [], goals: [], budgets: [], loans: [], loanTxs: [], migration: null, needsMigration: false })
   },
 
   refreshModules: async () => {
@@ -144,7 +152,7 @@ function maybeSnapshots() {
   if (bootstrapped.snapshots || !s.ready.accounts || !s.transactions.length) return
   bootstrapped.snapshots = true
   const hv = s.holdings.filter(h => h.status !== 'sold').reduce((a, h) => a + (Number(h.currentValue) || Number(h.amount) || 0), 0)
-  snapshotService.ensureSnapshots(s.transactions, s.accounts, hv, s.budgets).catch(console.error)
+  snapshotService.ensureSnapshots(s.transactions, s.accounts, hv, s.budgets, undefined, s.loans, s.loanTxs).catch(console.error)
 }
 
 // ───────────────────────── hooks ─────────────────────────

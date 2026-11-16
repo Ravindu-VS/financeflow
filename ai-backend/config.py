@@ -3,9 +3,9 @@ Application Configuration — FinAI Enterprise
 All settings loaded from environment variables
 """
 import os
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, NoDecode
 from pydantic import field_validator
-from typing import List
+from typing import Annotated, List
 
 
 class Settings(BaseSettings):
@@ -35,7 +35,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
 
     # CORS (comma-separated string or JSON list in env)
-    ALLOWED_ORIGINS: List[str] = [
+    # NoDecode: accept a plain comma-separated value (as set in hosting dashboards) as well as JSON
+    ALLOWED_ORIGINS: Annotated[List[str], NoDecode] = [
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:4173",
@@ -49,7 +50,10 @@ class Settings(BaseSettings):
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):
-        if isinstance(v, str) and not v.strip().startswith("["):
+        if isinstance(v, str) and v.strip().startswith("["):
+            import json
+            return json.loads(v)
+        if isinstance(v, str):
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
 

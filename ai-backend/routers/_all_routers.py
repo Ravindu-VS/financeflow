@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, and_
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
@@ -351,6 +351,63 @@ async def get_analytics_overview(
 # ─── Financial Advisor Portal Router ─────────────────────────────────────────
 advisor_router = APIRouter()
 
+class AdvisorLink(BaseModel):
+    code: str = Field(..., min_length=8, max_length=64)
+
+
+@advisor_router.post("/enroll")
+async def enroll_as_advisor(user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    """Turn on advisor mode. Safe to self-serve: an advisor only ever sees clients who link to them."""
+    from models.models import Role, UserRole
+    role = (await db.execute(select(Role).where(Role.name == "financial_advisor"))).scalar_one_or_none()
+    if not role:
+        role = Role(name="financial_advisor", description="Financial advisor", permissions=[])
+        db.add(role)
+        await db.flush()
+    exists = (await db.execute(select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id))).scalar_one_or_none()
+    if not exists:
+        db.add(UserRole(user_id=user.id, role_id=role.id, granted_by=user.id))
+    await db.commit()
+    return {"is_advisor": True, "advisor_code": str(user.id)}
+
+
+@advisor_router.get("/me")
+async def my_advisor_status(user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    """Client view: who (if anyone) I share my data with; advisor view: my code."""
+    adv = await db.get(User, user.advisor_id) if user.advisor_id else None
+    is_adv = any(r.name in ("financial_advisor", "admin") for r in user.roles)
+    return {
+        "is_advisor": is_adv,
+        "advisor_code": str(user.id) if is_adv else None,
+        "my_advisor": {"name": f"{adv.first_name or ''} {adv.last_name or ''}".strip() or adv.email.split("@")[0], "email": adv.email} if adv else None,
+    }
+
+
+@advisor_router.post("/link")
+async def link_advisor(data: AdvisorLink, user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    """Client consents to share their synced data with the advisor whose code they entered."""
+    import uuid as _uuid
+    try:
+        aid = _uuid.UUID(data.code.strip())
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Advisor code not found")
+    adv = await db.get(User, aid)
+    if not adv or not any(r.name in ("financial_advisor", "admin") for r in adv.roles):
+        raise HTTPException(status_code=404, detail="Advisor code not found")
+    if adv.id == user.id:
+        raise HTTPException(status_code=400, detail="You can't be your own advisor")
+    user.advisor_id = adv.id
+    await db.commit()
+    return await my_advisor_status(user, db)
+
+
+@advisor_router.post("/unlink")
+async def unlink_advisor(user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    user.advisor_id = None
+    await db.commit()
+    return await my_advisor_status(user, db)
+
+
 @advisor_router.get("/clients")
 async def get_advisor_clients(advisor: User = Depends(require_advisor), db: AsyncSession = Depends(get_db)):
     """Get all users assigned to this financial advisor"""
@@ -426,33 +483,112 @@ async def get_client_overview(
 
 
 # ─── Family Accounts Router ───────────────────────────────────────────────────
+# A household shares one group. The owner creates it and shares the invite code (the group id);
+# members join with it. The shared summary adds up each member's synced income/expenses for a month.
 family_router = APIRouter()
 
+
 class FamilyGroupCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class FamilyJoin(BaseModel):
+    code: str = Field(..., min_length=8, max_length=64)
+
+
+async def _group_payload(user: User, db: AsyncSession):
+    from models.models import FamilyGroup
+    group = await db.get(FamilyGroup, user.family_group_id)
+    if not group:
+        return {"group": None, "members": []}
+    result = await db.execute(select(User).where(User.family_group_id == group.id).order_by(User.created_at))
+    members = result.scalars().all()
+    return {
+        "group": {"id": str(group.id), "name": group.name, "currency": group.currency, "invite_code": str(group.id),
+                  "is_owner": group.owner_id == user.id},
+        "members": [{"id": str(m.id), "name": f"{m.first_name or ''} {m.last_name or ''}".strip() or m.email.split("@")[0],
+                     "email": m.email, "is_owner": m.id == group.owner_id, "is_you": m.id == user.id} for m in members],
+    }
+
 
 @family_router.post("/create")
 async def create_family_group(data: FamilyGroupCreate, user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
     from models.models import FamilyGroup
-    group = FamilyGroup(name=data.name, owner_id=user.id, currency=user.currency)
+    if user.family_group_id:
+        raise HTTPException(status_code=409, detail="You are already in a family group — leave it first")
+    group = FamilyGroup(name=data.name.strip(), owner_id=user.id, currency=user.currency or "LKR")
     db.add(group)
     await db.flush()
     user.family_group_id = group.id
     await db.commit()
-    return {"group_id": str(group.id), "message": "Family group created"}
+    return await _group_payload(user, db)
+
+
+@family_router.post("/join")
+async def join_family_group(data: FamilyJoin, user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    from models.models import FamilyGroup
+    import uuid as _uuid
+    try:
+        gid = _uuid.UUID(data.code.strip())
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Invite code not found")
+    group = await db.get(FamilyGroup, gid)
+    if not group:
+        raise HTTPException(status_code=404, detail="Invite code not found")
+    if user.family_group_id and user.family_group_id != gid:
+        raise HTTPException(status_code=409, detail="You are already in a family group — leave it first")
+    count = (await db.execute(select(func.count(User.id)).where(User.family_group_id == gid))).scalar() or 0
+    if count >= 12:
+        raise HTTPException(status_code=409, detail="This family group is full")
+    user.family_group_id = gid
+    await db.commit()
+    return await _group_payload(user, db)
+
+
+@family_router.post("/leave")
+async def leave_family_group(user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    from models.models import FamilyGroup
+    if not user.family_group_id:
+        return {"group": None, "members": []}
+    gid = user.family_group_id
+    group = await db.get(FamilyGroup, gid)
+    user.family_group_id = None
+    await db.flush()
+    others = (await db.execute(select(User).where(User.family_group_id == gid).order_by(User.created_at))).scalars().all()
+    if group:
+        if not others:
+            await db.delete(group)
+        elif group.owner_id == user.id:
+            group.owner_id = others[0].id  # hand ownership to the longest-standing member
+    await db.commit()
+    return {"group": None, "members": []}
+
 
 @family_router.get("/members")
 async def get_family_members(user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
     if not user.family_group_id:
-        return {"members": [], "message": "Not part of a family group"}
-    
-    result = await db.execute(select(User).where(User.family_group_id == user.family_group_id))
-    members = result.scalars().all()
-    
-    return {
-        "family_group_id": str(user.family_group_id),
-        "members": [
-            {"id": str(m.id), "name": f"{m.first_name} {m.last_name or ''}", "email": m.email}
-            for m in members
-        ]
-    }
+        return {"group": None, "members": [], "message": "Not part of a family group"}
+    return await _group_payload(user, db)
+
+
+@family_router.get("/summary")
+async def family_summary(month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"), user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    """Household totals for a month from each member's synced data (income, net expenses, top categories)."""
+    if not user.family_group_id:
+        raise HTTPException(status_code=404, detail="Not part of a family group")
+    today = date.today()
+    y, m = (int(month[:4]), int(month[5:])) if month else (today.year, today.month)
+    start = date(y, m, 1)
+    end = date(y + (m == 12), 1 if m == 12 else m + 1, 1)
+    members = (await db.execute(select(User).where(User.family_group_id == user.family_group_id))).scalars().all()
+    ids = [mb.id for mb in members]
+    inc = dict((await db.execute(select(Income.user_id, func.coalesce(func.sum(Income.amount), 0)).where(Income.user_id.in_(ids), Income.date >= start, Income.date < end).group_by(Income.user_id))).all())
+    exp = dict((await db.execute(select(Expense.user_id, func.coalesce(func.sum(Expense.amount), 0)).where(Expense.user_id.in_(ids), Expense.date >= start, Expense.date < end).group_by(Expense.user_id))).all())
+    cats = (await db.execute(select(Expense.category, func.sum(Expense.amount)).where(Expense.user_id.in_(ids), Expense.date >= start, Expense.date < end).group_by(Expense.category).order_by(desc(func.sum(Expense.amount))).limit(6))).all()
+    per = [{"id": str(mb.id), "name": f"{mb.first_name or ''} {mb.last_name or ''}".strip() or mb.email.split("@")[0],
+            "income": float(inc.get(mb.id, 0)), "expenses": float(exp.get(mb.id, 0)),
+            "last_synced_at": mb.last_synced_at.isoformat() if getattr(mb, "last_synced_at", None) else None} for mb in members]
+    ti, te = sum(p["income"] for p in per), sum(p["expenses"] for p in per)
+    return {"month": f"{y:04d}-{m:02d}", "income": ti, "expenses": te, "net": ti - te,
+            "savings_rate": round((ti - te) / ti * 100, 1) if ti else None,
+            "members": per, "top_categories": [{"category": c, "total": float(t)} for c, t in cats]}

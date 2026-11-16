@@ -7,7 +7,7 @@ import type { RecurringRule } from './types'
 import { addDays, diffDays, monthKey } from './dates'
 
 export type AlertSeverity = 'info' | 'warning' | 'danger'
-export interface FinanceAlert { id: string; severity: AlertSeverity; title: string; body: string; link: string; kind: 'bill' | 'budget' | 'goal' | 'unusual' | 'safe_to_spend' | 'sync' }
+export interface FinanceAlert { id: string; severity: AlertSeverity; title: string; body: string; link: string; kind: 'bill' | 'budget' | 'goal' | 'unusual' | 'safe_to_spend' | 'sync' | 'loan' }
 
 export interface AlertInput {
   today: string
@@ -16,6 +16,7 @@ export interface AlertInput {
   goals: { id: string; name: string; deadline?: string; pct: number; perMonth: number }[]
   anomalies: { id: string; label: string; amount: number; reason: string }[]
   safeToSpend?: { amount: number; perDay: number } | null
+  loans?: { id: string; direction: 'borrowed' | 'lent'; counterparty: string; outstanding: number; dueDate?: string; dueInDays: number | null; overdueDays: number | null }[]
   lowSafeToSpendPerDay?: number
   formatMoney: (n: number) => string
 }
@@ -47,6 +48,12 @@ export function computeAlerts(i: AlertInput): FinanceAlert[] {
   }
   for (const a of i.anomalies.slice(0, 3)) {
     out.push({ id: `unusual_${a.id}`, kind: 'unusual', severity: 'warning', link: '/transactions', title: `Unusual expense: ${a.label}`, body: `${i.formatMoney(a.amount)} — ${a.reason}` })
+  }
+  for (const l of i.loans || []) {
+    if (!l.outstanding) continue
+    const who = l.direction === 'borrowed' ? `Loan from ${l.counterparty}` : `${l.counterparty} owes you`
+    if (l.overdueDays) out.push({ id: `loan_${l.id}_overdue_${l.dueDate}`, kind: 'loan', severity: l.direction === 'borrowed' ? 'danger' : 'warning', link: '/loans', title: `${who} is overdue`, body: `${i.formatMoney(l.outstanding)} outstanding · ${l.overdueDays} days past ${l.dueDate}` })
+    else if (l.dueInDays != null && l.dueInDays <= 14) out.push({ id: `loan_${l.id}_due_${l.dueDate}`, kind: 'loan', severity: 'info', link: '/loans', title: `${who} — due in ${l.dueInDays} day${l.dueInDays === 1 ? '' : 's'}`, body: `${i.formatMoney(l.outstanding)} outstanding` })
   }
   if (i.safeToSpend && i.lowSafeToSpendPerDay != null && i.safeToSpend.perDay < i.lowSafeToSpendPerDay) {
     const neg = i.safeToSpend.amount < 0

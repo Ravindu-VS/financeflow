@@ -3,7 +3,7 @@ import { useThemeStore } from '../store/themeStore'
 import { SunIcon, MoonIcon } from '@heroicons/react/24/outline'
 
 export default function AuthLayout() {
-  const { theme, toggleTheme } = useThemeStore()
+  const { resolved: theme, toggleTheme } = useThemeStore()
   
   return (
     <div className="min-h-screen flex">

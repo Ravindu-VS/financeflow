@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useEffect, Suspense, lazy } from 'react'
 import { useAuthStore } from './store/authStore'
-import { useThemeStore } from './store/themeStore'
+import { useThemeStore, applyTheme } from './store/themeStore'
 import { useEnterpriseStore } from './store/enterpriseStore'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
 
@@ -35,6 +35,7 @@ const TransactionsPage = lazy(() => import('./components/transactions/Transactio
 const CashFlowPage = lazy(() => import('./components/cashflow/CashFlowPage'))
 const CalendarPage = lazy(() => import('./components/calendar/CalendarPage'))
 const AccountsPage = lazy(() => import('./components/accounts/AccountsPage'))
+const LoansPage = lazy(() => import('./components/loans/LoansPage'))
 const PlanningPage = lazy(() => import('./components/recurring/PlanningPage'))
 
 // ── Enterprise Pages (NEW) ───────────────────────────────────────────────────
@@ -93,7 +94,7 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 }
 
 function App() {
-  const { theme } = useThemeStore()
+  const { theme, resolved } = useThemeStore()
   const initAuth = useAuthStore((state) => state.initAuth)
 
   // Initialize Firebase Auth listener once on app mount
@@ -103,12 +104,7 @@ function App() {
   }, [initAuth])
 
   useEffect(() => {
-    // Apply theme class to document
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+    applyTheme(theme)
   }, [theme])
 
   return (
@@ -149,6 +145,7 @@ function App() {
             <Route path="/cashflow" element={<CashFlowPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/accounts" element={<AccountsPage />} />
+            <Route path="/loans" element={<LoansPage />} />
             <Route path="/planning" element={<PlanningPage />} />
             <Route path="/recurring" element={<Navigate to="/planning" replace />} />
             <Route path="/income" element={<IncomePage />} />
@@ -188,8 +185,8 @@ function App() {
         toastOptions={{
           duration: 4000,
           style: {
-            background: theme === 'dark' ? '#1f2937' : '#fff',
-            color: theme === 'dark' ? '#fff' : '#1f2937',
+            background: resolved === 'dark' ? '#1f2937' : '#fff',
+            color: resolved === 'dark' ? '#fff' : '#1f2937',
           },
           success: {
             iconTheme: {

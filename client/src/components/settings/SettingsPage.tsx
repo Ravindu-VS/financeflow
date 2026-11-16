@@ -21,7 +21,7 @@ import {
 
 export default function SettingsPage() {
   const { user, updateUser } = useAuthStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const { resolved: theme, theme: choice, setTheme } = useThemeStore()
   const [activeTab, setActiveTab] = useState<'preferences' | 'notifications' | 'security' | 'services'>(new URLSearchParams(location.search).get('tab') === 'services' ? 'services' : 'preferences')
   const [loading, setLoading] = useState(false)
 
@@ -46,7 +46,7 @@ export default function SettingsPage() {
 
   const onPrefsSubmit = async (data: any) => {
     try {
-      updateUser({ preferences: { ...user?.preferences, ...data } })
+      await updateUser({ preferences: { ...user?.preferences, ...data } })
       toast.success('Preferences updated successfully')
     } catch (error: any) {
       toast.error(error.message || 'Failed to update preferences')
@@ -55,7 +55,7 @@ export default function SettingsPage() {
 
   const onNotifSubmit = async (data: any) => {
     try {
-      updateUser({ preferences: { ...user?.preferences, ...data } })
+      await updateUser({ preferences: { ...user?.preferences, ...data } })
       toast.success('Notification settings updated')
     } catch (error: any) {
       toast.error(error.message || 'Failed to update notifications')
@@ -135,13 +135,18 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium text-gray-900 dark:text-white">Theme</p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {theme === 'dark' ? 'Dark mode' : 'Light mode'}
+                    {choice === 'system' ? `Matching your device (${theme})` : theme === 'dark' ? 'Dark mode' : 'Light mode'}
                   </p>
                 </div>
               </div>
-              <Button variant="outline" size="sm" onClick={toggleTheme}>
-                {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
-              </Button>
+              <div className="inline-flex rounded-xl bg-gray-200/70 dark:bg-gray-700 p-1" role="radiogroup" aria-label="Theme">
+                {(['light', 'dark', 'system'] as const).map(t => (
+                  <button key={t} type="button" role="radio" aria-checked={choice === t} onClick={() => setTheme(t)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium ${choice === t ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow' : 'text-gray-600 dark:text-gray-300'}`}>
+                    {t === 'light' ? 'Light' : t === 'dark' ? 'Dark' : 'Match device'}
+                  </button>
+                ))}
+              </div>
             </div>
           </Card>
 

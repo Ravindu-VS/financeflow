@@ -4,6 +4,9 @@ import { usePeriodData } from '../../hooks/useFinance'
 import { useFinanceStore } from '../../store/financeStore'
 import { getCategory, toCSV, analyzeBehavior, formatDateKey } from '../../lib/finance'
 import { formatCurrency } from '../../utils/currency'
+import { useState } from 'react'
+import toast from 'react-hot-toast'
+import { exportPdf, exportXlsx, type ReportData } from '../../services/exporters'
 
 function download(name: string, text: string, type: string) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click()
@@ -20,6 +23,17 @@ export default function PeriodReport() {
   const s = d.summary
   const b = analyzeBehavior(d.txs, d.period, useFinanceStore.getState().transactions)
   const accName = (id?: string) => accounts.find(a => a.id === id)?.name || ''
+  const [busy, setBusy] = useState<string | null>(null)
+  const reportData = (): ReportData => ({
+    title: d.period.label, start: d.period.start, end: d.period.end, currency: d.settings.baseCurrency || 'LKR', summary: s,
+    categories: d.byCategory, budgets: d.budgetStatus, insights: d.insights, transactions: d.txs, accountName: accName,
+    healthScore: d.health.score, netWorth: d.netWorth.netWorth,
+  })
+  const run = async (kind: 'pdf' | 'xlsx') => {
+    setBusy(kind)
+    try { await (kind === 'pdf' ? exportPdf : exportXlsx)(reportData()); toast.success(kind === 'pdf' ? 'PDF downloaded' : 'Excel file downloaded') }
+    catch (e: any) { toast.error(e.message || 'Export failed') } finally { setBusy(null) }
+  }
 
   const summaryCSV = () => {
     const rows = [
@@ -68,8 +82,10 @@ export default function PeriodReport() {
         <p className="text-[11px] text-gray-400">Expenses are net of refunds. Transfers are excluded from income and expenses. Predictions are estimates. Suggestions are general information, not personal financial advice.</p>
       </div>
       <div className="flex flex-wrap gap-2 mt-4 print:hidden">
-        <button className="btn btn-primary" onClick={() => window.print()}>📄 PDF / Print</button>
-        <button className="btn btn-secondary" onClick={() => download(`report-${d.period.start}_${d.period.end}.csv`, summaryCSV(), 'text/csv')}>📗 Summary (CSV/Excel)</button>
+        <button className="btn btn-primary" disabled={!!busy} onClick={() => run('pdf')}>📄 {busy === 'pdf' ? 'Building…' : 'PDF report'}</button>
+        <button className="btn btn-primary" disabled={!!busy} onClick={() => run('xlsx')}>📗 {busy === 'xlsx' ? 'Building…' : 'Excel (.xlsx)'}</button>
+        <button className="btn btn-secondary" onClick={() => window.print()}>🖨️ Print</button>
+        <button className="btn btn-secondary" onClick={() => download(`report-${d.period.start}_${d.period.end}.csv`, summaryCSV(), 'text/csv')}>Summary CSV</button>
         <button className="btn btn-secondary" onClick={() => download(`transactions-${d.period.start}_${d.period.end}.csv`, toCSV(d.txs, accName), 'text/csv')}>📋 Transactions CSV</button>
         <button className="btn btn-secondary" onClick={() => download(`report-${d.period.start}_${d.period.end}.json`, JSON.stringify({ period: d.period, summary: s, categories: d.byCategory, budgets: d.budgetStatus, insights: d.insights, transactions: d.txs }, null, 2), 'application/json')}>JSON</button>
       </div>

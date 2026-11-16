@@ -52,7 +52,7 @@ export interface NetWorth { assets: number; liabilities: number; netWorth: numbe
  * (`holdingsValue`). Investment transactions normally have no destination account, so
  * their cost basis is not double counted.
  */
-export function netWorth(accounts: Account[], balances: Record<string, number>, holdingsValue = 0): NetWorth {
+export function netWorth(accounts: Account[], balances: Record<string, number>, holdingsValue = 0, loans: { owedToYou: number; youOwe: number } = { owedToYou: 0, youOwe: 0 }): NetWorth {
   let assets = 0, liabilities = 0
   const byType: Record<string, number> = {}
   for (const a of accounts) {
@@ -64,6 +64,9 @@ export function netWorth(accounts: Account[], balances: Record<string, number>, 
   }
   assets += holdingsValue
   if (holdingsValue) byType.holdings = round2(holdingsValue)
+  // Loans tracked in the Loans module: money owed to you is an asset, money you owe a liability
+  if (loans.owedToYou) { assets += loans.owedToYou; byType.loans_receivable = round2(loans.owedToYou) }
+  if (loans.youOwe) { liabilities += loans.youOwe; byType.loans_payable = round2(-loans.youOwe) }
   return { assets: round2(assets), liabilities: round2(liabilities), netWorth: round2(assets - liabilities), byType }
 }
 
@@ -88,6 +91,8 @@ export interface CashFlowStatement {
   transfersIn: number
   transfersOut: number
   adjustments: number
+  loanInflow: number
+  loanOutflow: number
   closingBalance: number
 }
 
@@ -122,6 +127,8 @@ export function cashFlowStatement(accounts: Account[], txs: Transaction[], r: Pe
     transfersIn: round2(transfersIn),
     transfersOut: round2(transfersOut),
     adjustments: round2(adjustments),
+    loanInflow: s.loanInflow,
+    loanOutflow: s.loanOutflow,
     closingBalance: sum(closing),
   }
 }
@@ -266,7 +273,7 @@ export function forecastMonthExpenses(txs: Transaction[], rules: RecurringRule[]
     low: round2(Math.max(actual, expected - spread)),
     high: round2(expected + spread),
     confidence,
-    basis: `Actual so far ${round2(actual)} + ${remainingDays} days at ~${round2(pace)}/day + ${round2(remainingBills)} known recurring. Based on ${hist.length} month(s) of history.`,
+    basis: `Actual so far Rs. ${Math.round(actual).toLocaleString("en-US")} + ${remainingDays} days at ~Rs. ${Math.round(pace).toLocaleString("en-US")}/day + Rs. ${Math.round(remainingBills).toLocaleString("en-US")} known recurring. Based on ${hist.length} month(s) of history.`,
   }
 }
 

@@ -18,7 +18,7 @@ interface AuthState {
   register: (data: RegisterData) => Promise<void>
   logout: () => Promise<void>
   initAuth: () => () => void
-  updateUser: (data: Partial<User>) => void
+  updateUser: (data: Partial<User>) => Promise<void>
   clearError: () => void
 }
 
@@ -152,14 +152,18 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }
   },
 
-  updateUser: (data: Partial<User>) => {
+  updateUser: async (data: Partial<User>) => {
     const { user, firebaseUser } = get()
-    if (user && firebaseUser) {
-      const updatedUser = { ...user, ...data }
-      set({ user: updatedUser })
-      
-      // Update in Firestore
-      authService.updateUserProfile(firebaseUser.uid, data).catch(console.error)
+    if (!user || !firebaseUser) return
+    const previous = user
+    set({ user: { ...user, ...data } })  // optimistic: sidebar/header update immediately
+    // Firestore rejects undefined values; strip them before saving
+    const clean = JSON.parse(JSON.stringify(data))
+    try {
+      await authService.updateUserProfile(firebaseUser.uid, clean)
+    } catch (e) {
+      set({ user: previous })
+      throw e
     }
   },
 

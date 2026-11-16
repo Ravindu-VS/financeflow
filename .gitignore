@@ -46,3 +46,13 @@ firebase-debug.log
 client/test-results/
 client/playwright-report/
 client/dev-dist/
+
+# local only
+node_modules
+client/demo/
+client/vite.demo.config.ts
+__pycache__/
+*.pyc
+.pytest_cache/
+ai-backend/reports/
+ai-backend/uploads/

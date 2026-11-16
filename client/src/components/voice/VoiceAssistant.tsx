@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
+import { useSpeech } from '../../hooks/useSpeech'
 import { apiClient } from '../../store/enterpriseStore'
 import { auth } from '../../config/firebase'
 import toast from 'react-hot-toast'
-import { parseFinancialText, makePeriod, summarize, categoryLabel, todayKey, type ParsedEntry } from '../../lib/finance'
+import { parseAnyLanguage, isSinhala, sinhalaToEnglish, makePeriod, summarize, categoryLabel, todayKey, type ParsedEntry } from '../../lib/finance'
 import { useQuickAdd } from '../../store/quickAddStore'
 import { useFinanceStore } from '../../store/financeStore'
 import { formatCurrency } from '../../utils/currency'
@@ -14,7 +15,7 @@ const TYPE_TO_INTENT: Record<string, string> = {
 
 /** Answer simple questions on-device from the user's real data. */
 function answerQuery(text: string): string | null {
-  const t = text.toLowerCase()
+  const t = (isSinhala(text) ? sinhalaToEnglish(text) : text).toLowerCase()
   if (!/^(how much|what|did i|show)/.test(t)) return null
   const { transactions } = useFinanceStore.getState()
   const p = /today/.test(t) ? makePeriod('today') : /week/.test(t) ? makePeriod('this_week') : /last month/.test(t) ? makePeriod('last_month') : /year/.test(t) ? makePeriod('this_year') : makePeriod('this_month')
@@ -54,6 +55,15 @@ const EXAMPLE_COMMANDS = [
   { text: "How much did I spend this week?", intent: "query_balance" },
   { text: "Save 5000 to emergency fund", intent: "add_savings" },
 ]
+const EXAMPLE_COMMANDS_SI = [
+  { text: 'අද දවල් කෑමට රුපියල් 850ක් වියදම් කළා', intent: 'add_expense' },
+  { text: 'ඊයේ ත්‍රීවීල් එකට 600ක් ගෙව්වා', intent: 'add_expense' },
+  { text: 'විදුලි බිලට දෙදාහයි පන්සියයි ගෙව්වා', intent: 'add_expense' },
+  { text: 'පඩිය රුපියල් ලක්ෂ දෙකයි පනස්දාහක් ලැබුණා', intent: 'add_income' },
+  { text: 'රත්තරන් වලට 20000ක් ආයෝජනය කළා', intent: 'add_investment' },
+  { text: '5000ක් ඉතුරු කළා', intent: 'add_savings' },
+  { text: 'මේ මාසේ කීයද වියදම් කළේ', intent: 'query_balance' },
+]
 
 export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormFill?: (intent: string, data: any) => void }) {
   const quick = useQuickAdd()
@@ -64,51 +74,15 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
     const fromIntent: Record<string, any> = { add_expense: 'expense', add_income: 'income', add_investment: 'investment', add_savings: 'savings_contribution', add_transfer: 'transfer', add_refund: 'refund' }
     quick.open(type || fromIntent[intent] || 'expense', { ...rest, amount: rest.amount != null ? Number(rest.amount) : undefined, source: 'voice' })
   })
-  const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [result, setResult] = useState<VoiceResult | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [history, setHistory] = useState<VoiceResult[]>([])
   const [manualInput, setManualInput] = useState('')
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
-  const [supported, setSupported] = useState(true)
-
-  useEffect(() => {
-    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognitionAPI) {
-      setSupported(false)
-      return
-    }
-
-    const recognition = new SpeechRecognitionAPI()
-    recognition.continuous = false
-    recognition.interimResults = true
-    recognition.lang = 'en-LK'
-    recognition.maxAlternatives = 1
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = Array.from(event.results)
-        .map((result) => result[0].transcript)
-        .join('')
-      setTranscript(transcript)
-
-      if (event.results[0].isFinal) {
-        processTranscript(transcript)
-      }
-    }
-
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      console.error('Speech recognition error:', event.error)
-      setIsListening(false)
-      if (event.error !== 'aborted') {
-        toast.error(`Voice error: ${event.error}`)
-      }
-    }
-
-    recognition.onend = () => setIsListening(false)
-
-    recognitionRef.current = recognition
-  }, [])
+  const speech = useSpeech(text => { setTranscript(text); processTranscript(text) })
+  const isListening = speech.listening
+  const supported = speech.supported
+  const si = speech.lang === 'si-LK'
 
   const processTranscript = async (text: string) => {
     if (!text.trim()) return
@@ -118,9 +92,9 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
       const q = answerQuery(text)
       if (q) { setAnswer(q); setResult(null); return }
       // 1) On-device parser (works offline, no backend needed)
-      let data = toResult(parseFinancialText(text, todayKey()), text)
+      let data = toResult(parseAnyLanguage(text, todayKey()), text)
       // 2) Optional: enterprise NLP backend when signed in to the gateway and local confidence is low
-      if (data.confidence < 0.6 && auth.currentUser && navigator.onLine) {
+      if (data.confidence < 0.6 && !isSinhala(text) && auth.currentUser && navigator.onLine) {
         try {
           const { data: remote } = await apiClient.post('/api/v1/voice/process', { transcript: text }, { timeout: 4000 })
           if (remote?.confidence > data.confidence) data = remote
@@ -139,16 +113,8 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
   }
 
   const toggleListening = () => {
-    if (!recognitionRef.current) return
-    if (isListening) {
-      recognitionRef.current.stop()
-      setIsListening(false)
-    } else {
-      setTranscript('')
-      setResult(null)
-      recognitionRef.current.start()
-      setIsListening(true)
-    }
+    if (isListening) speech.stop()
+    else { setTranscript(''); setResult(null); setAnswer(null); speech.start() }
   }
 
   const handleManualSubmit = (e: React.FormEvent) => {
@@ -180,7 +146,17 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
           <span className="text-xs text-gray-500">Web Speech API + NLP</span>
         </div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Talk to FinAI</h2>
-        <p className="text-gray-400 text-sm">Speak naturally to add transactions, query your finances, or manage investments</p>
+        <p className="text-gray-400 text-sm">Speak naturally in English or සිංහල to add transactions or ask about your money</p>
+      </div>
+
+      {/* Language */}
+      <div className="flex justify-center">
+        <div className="inline-flex rounded-xl bg-gray-100 dark:bg-gray-800 p-1" role="radiogroup" aria-label="Voice language">
+          {([['en-LK', 'English'], ['si-LK', 'සිංහල']] as const).map(([code, label]) => (
+            <button key={code} type="button" role="radio" aria-checked={speech.lang === code} disabled={isListening} onClick={() => speech.setLang(code)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium ${speech.lang === code ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow' : 'text-gray-600 dark:text-gray-300'}`}>{label}</button>
+          ))}
+        </div>
       </div>
 
       {/* Microphone Button */}
@@ -213,11 +189,12 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
                     style={{ height: `${Math.random() * 20 + 8}px`, animationDelay: `${i * 0.1}s` }} />
                 ))}
               </div>
-              <span className="text-sm font-medium">Listening...</span>
+              <span className="text-sm font-medium">{si ? 'අහගෙන ඉන්නවා… ' : 'Listening… '}{speech.interim && <em className="font-normal">"{speech.interim}"</em>}</span>
             </div>
           )}
           {isProcessing && <p className="text-indigo-400 text-sm animate-pulse">Processing command...</p>}
-          {!isListening && !isProcessing && <p className="text-gray-500 text-sm">Tap to speak</p>}
+          {!isListening && !isProcessing && <p className="text-gray-500 text-sm">{si ? 'කතා කිරීමට ඔබන්න' : 'Tap to speak'}</p>}
+          {speech.error && <p className="text-red-600 dark:text-red-400 text-sm mt-2 max-w-sm">{speech.error}</p>}
         </div>
       </div>
 
@@ -281,7 +258,7 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
             type="text"
             value={manualInput}
             onChange={(e) => setManualInput(e.target.value)}
-            placeholder="e.g. Add expense 500 for lunch"
+            placeholder={si ? 'උදා: අද කෑමට 500ක් වියදම් කළා' : 'e.g. Add expense 500 for lunch'}
             className="flex-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500/50 placeholder-gray-600 transition-colors"
           />
           <button
@@ -298,7 +275,7 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
       <div>
         <p className="text-xs text-gray-500 mb-3">Example commands:</p>
         <div className="space-y-2">
-          {EXAMPLE_COMMANDS.map((cmd, i) => (
+          {(si ? EXAMPLE_COMMANDS_SI : EXAMPLE_COMMANDS).map((cmd, i) => (
             <button
               key={i}
               onClick={() => { setManualInput(cmd.text); processTranscript(cmd.text) }}
@@ -315,7 +292,7 @@ export default function VoiceAssistant({ onFormFill: onFormFillProp }: { onFormF
 
       {!supported && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-yellow-400 text-sm">
-          ⚠️ Speech recognition not supported in this browser. Please use Chrome or Edge, or use the manual text input above.
+          ⚠️ Speech recognition isn't available in this browser. Use Chrome (Android/desktop), Edge or Safari — or type above (English or සිංහල).
         </div>
       )}
     </div>

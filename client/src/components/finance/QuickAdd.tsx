@@ -36,12 +36,7 @@ export default function QuickAdd() {
         </div>
       )}
       <div className="flex items-center gap-2">
-        {!open && (
-          <button onClick={() => quick.open('expense')} className="hidden sm:block px-4 py-3 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200">
-            + Expense
-          </button>
-        )}
-        <button aria-label={open ? 'Close quick add' : 'Quick add'} onClick={() => setOpen(!open)}
+        <button aria-label={open ? 'Close quick add' : 'Quick add'} title={open ? 'Close' : 'Add income, expense, transfer…'} onClick={() => setOpen(!open)}
           className="w-14 h-14 rounded-full bg-primary-600 hover:bg-primary-700 text-white shadow-xl flex items-center justify-center">
           {open ? <XMarkIcon className="w-7 h-7" /> : <PlusIcon className="w-7 h-7" />}
         </button>

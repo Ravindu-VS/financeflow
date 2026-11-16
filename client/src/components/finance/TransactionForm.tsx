@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { Modal } from '../ui'
@@ -6,6 +7,7 @@ import { useFinanceStore } from '../../store/financeStore'
 import { saveTransaction, updateTransaction, nextDates } from '../../services/transactionActions'
 import { recurringService } from '../../services/financeService'
 import { scanReceipt } from '../../services/ocr'
+import { compressImage } from '../../utils/image'
 import {
   categoriesForType, todayKey, addDays, validateTransaction, findDuplicates, FREQUENCIES, isEssentialCategory,
   formatDateKey, kindForType, makeCustomCategory, registerCustomCategories, CURRENCY_LIST,
@@ -29,20 +31,11 @@ const MORE_TYPES: { value: TransactionType; label: string }[] = [
   { value: 'withdrawal', label: 'Investment withdrawal' },
   { value: 'adjustment', label: 'Balance adjustment' },
 ]
+const LOAN_TYPE_LABEL: Record<string, string> = { loan_received: 'Loan received', loan_repayment: 'Loan repayment', loan_given: 'Money lent', loan_collected: 'Loan collected' }
 const PAYMENT_METHODS = ['cash', 'debit_card', 'credit_card', 'bank_transfer', 'ewallet', 'qr', 'other']
 
-async function compressImage(file: File, max = 1024, quality = 0.6): Promise<string> {
-  const img = await new Promise<HTMLImageElement>((res, rej) => {
-    const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file)
-  })
-  const scale = Math.min(1, max / Math.max(img.width, img.height))
-  const c = document.createElement('canvas')
-  c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale)
-  c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
-  return c.toDataURL('image/jpeg', quality)
-}
-
 export default function TransactionForm() {
+  const navigate = useNavigate()
   const { isOpen, mode: initialMode, prefill, editing, close } = useQuickAdd()
   const { accounts, goals, holdings, transactions, settings } = useFinanceStore()
   const [customOpen, setCustomOpen] = useState(false)
@@ -215,11 +208,18 @@ export default function TransactionForm() {
                 {m.label}
               </button>
             ))}
-            <select aria-label="Other types" className="input py-2 w-auto text-sm" value={MORE_TYPES.some(t => t.value === mode) ? mode : ''} onChange={e => { if (e.target.value) { setMode(e.target.value as TransactionType); set('category', categoriesForType(e.target.value as TransactionType)[0]?.id) } }}>
+            <select aria-label="Other types" className="input py-2 w-auto text-sm" value={MORE_TYPES.some(t => t.value === mode) ? mode : ''} onChange={e => { if (e.target.value === '__loan') { close(); navigate('/loans'); return } if (e.target.value) { setMode(e.target.value as TransactionType); set('category', categoriesForType(e.target.value as TransactionType)[0]?.id) } }}>
               <option value="">More…</option>
               {MORE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              <option value="__loan">Loan (borrowed / lent)…</option>
             </select>
           </div>
+        )}
+
+        {editing && LOAN_TYPE_LABEL[editing.type] && (
+          <p className="text-sm rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 p-3">
+            {LOAN_TYPE_LABEL[editing.type]} — part of a loan. You can correct the amount, date or note here; record new repayments on the <button type="button" className="underline font-medium" onClick={() => { close(); navigate('/loans') }}>Loans page</button>.
+          </p>
         )}
 
         {!editing && (type === 'expense' || mode === 'bill' || type === 'refund' || type === 'reimbursement') && (

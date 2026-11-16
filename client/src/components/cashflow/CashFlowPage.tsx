@@ -24,6 +24,7 @@ export default function CashFlowPage() {
     { name: 'Investments', value: -cf.investments, kind: 'out' },
     { name: 'Transfers', value: cf.transfersIn - cf.transfersOut, kind: cf.transfersIn - cf.transfersOut >= 0 ? 'in' : 'out' },
     ...(cf.adjustments ? [{ name: 'Adjustments', value: cf.adjustments, kind: cf.adjustments >= 0 ? 'in' : 'out' }] : []),
+    ...(cf.loanInflow || cf.loanOutflow ? [{ name: 'Loans', value: cf.loanInflow - cf.loanOutflow, kind: cf.loanInflow - cf.loanOutflow >= 0 ? 'in' : 'out' }] : []),
     { name: 'Closing', value: cf.closingBalance, kind: 'total' },
   ]
   // waterfall: invisible base + visible delta
@@ -66,6 +67,7 @@ export default function CashFlowPage() {
               <tr><td className="py-2 text-blue-600">− Invested</td><td className="text-right tabular-nums">{formatCurrency(cf.investments)}</td></tr>
               <tr><td className="py-2 text-gray-500">± Transfers (in {formatCurrency(cf.transfersIn)} / out {formatCurrency(cf.transfersOut)})</td><td className="text-right tabular-nums">{formatCurrency(cf.transfersIn - cf.transfersOut)}</td></tr>
               {cf.adjustments !== 0 && <tr><td className="py-2 text-gray-500">± Adjustments</td><td className="text-right tabular-nums">{formatCurrency(cf.adjustments)}</td></tr>}
+              {(cf.loanInflow !== 0 || cf.loanOutflow !== 0) && <tr><td className="py-2 text-orange-600 dark:text-orange-400">± Loans (in {formatCurrency(cf.loanInflow)} / out {formatCurrency(cf.loanOutflow)})</td><td className="text-right tabular-nums">{formatCurrency(cf.loanInflow - cf.loanOutflow)}</td></tr>}
               <tr><td className="py-2 font-semibold">Closing balance</td><td className="text-right tabular-nums font-semibold">{formatCurrency(cf.closingBalance)}</td></tr>
             </tbody>
           </table>

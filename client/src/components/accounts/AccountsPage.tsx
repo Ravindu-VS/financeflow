@@ -5,12 +5,12 @@ import { Card, SectionHeader, Modal } from '../ui'
 import { useFinanceStore, useBalances } from '../../store/financeStore'
 import { useQuickAdd } from '../../store/quickAddStore'
 import { accountService, snapshotService } from '../../services/financeService'
-import { ACCOUNT_TYPES, isLiabilityAccount, netWorth, type Account, type AccountType } from '../../lib/finance'
+import { ACCOUNT_TYPES, isLiabilityAccount, netWorth, loanTotals, todayKey, type Account, type AccountType } from '../../lib/finance'
 import { formatCurrency, formatAxisCurrency } from '../../utils/currency'
 
 /** Accounts, balances and net worth (assets − liabilities). */
 export default function AccountsPage() {
-  const { accounts, holdings } = useFinanceStore()
+  const { accounts, holdings, loans, loanTxs } = useFinanceStore()
   const balances = useBalances()
   const { open } = useQuickAdd()
   const [editing, setEditing] = useState<Account | null>(null)
@@ -22,7 +22,7 @@ export default function AccountsPage() {
   useEffect(() => { snapshotService.list().then(setSnaps).catch(() => {}) }, [accounts.length])
 
   const holdingsValue = holdings.filter(h => h.status !== 'sold').reduce((s, h) => s + (Number(h.currentValue) || Number(h.amount) || 0), 0)
-  const nw = netWorth(accounts, balances, holdingsValue)
+  const nw = netWorth(accounts, balances, holdingsValue, loanTotals(loans, loanTxs, todayKey()))
   const prevMonth = snaps[0], prevYear = snaps.find(s => s.month === `${Number(new Date().getFullYear()) - 1}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
   const trend = [...snaps].reverse().map(s => ({ name: s.month, 'Net worth': s.netWorth })).concat([{ name: 'Now', 'Net worth': nw.netWorth }])
 

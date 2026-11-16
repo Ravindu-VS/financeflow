@@ -259,7 +259,7 @@ export default function GlobalMarketsPage() {
       case 'closed': return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
       case 'pre-market': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
       case 'after-hours': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-      default: return 'bg-gray-100 text-gray-700'
+      default: return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
     }
   }
 

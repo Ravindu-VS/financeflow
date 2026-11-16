@@ -6,7 +6,8 @@
  * questions on-device when the backend is unreachable. Every answer separates
  * FACT / PREDICTION / RECOMMENDATION and states its basis.
  */
-import type { Transaction, RecurringRule } from './types'
+import type { Transaction, RecurringRule, Loan } from './types'
+import { loanStatus } from './loans'
 import { summarize, expensesByCategory, incomeByCategory, pctChange, round2 } from './aggregate'
 import { makePeriod, todayKey } from './dates'
 import { categoryLabel } from './categories'
@@ -26,6 +27,7 @@ export interface FinancialContext {
   behavior: ReturnType<typeof analyzeBehavior>
   insights: { kind: string; detail: string; basis: string }[]
   netWorth?: number
+  loans?: { direction: 'borrowed' | 'lent'; counterparty: string; principal: number; outstanding: number; dueDate?: string; overdueDays: number | null; interestRate?: number }[]
   rulesNote: string
 }
 
@@ -33,6 +35,7 @@ export function buildFinancialContext(o: {
   transactions: Transaction[]; rules: RecurringRule[]; budgets: { category: string; amount: number }[]
   goals: { name: string; targetAmount: number; currentAmount: number; deadline?: string }[]
   safeToSpend?: SafeToSpendResult; netWorth?: number; today?: string
+  loans?: Loan[]; loanTxs?: Transaction[]
 }): FinancialContext {
   const today = o.today || todayKey()
   const cur = makePeriod('this_month', today), prev = makePeriod('last_month', today)
@@ -52,7 +55,11 @@ export function buildFinancialContext(o: {
     behavior: analyzeBehavior(ct, cur, o.transactions),
     insights: generateInsights({ all: o.transactions, current: cur, previous: prev, rules: o.rules, today }).map(i => ({ kind: i.kind, detail: i.detail, basis: i.basis })),
     netWorth: o.netWorth,
-    rulesNote: 'Expenses are net of refunds. Transfers are excluded from income/expenses. Savings and investments are not expenses. Forecasts are estimates.',
+    loans: (o.loans || []).filter(l => l.status === 'active').map(l => {
+      const st = loanStatus(l, o.loanTxs || [], today)
+      return { direction: l.direction, counterparty: l.counterparty, principal: st.principal, outstanding: st.outstanding, dueDate: l.dueDate, overdueDays: st.overdueDays, interestRate: l.interestRate }
+    }),
+    rulesNote: 'Expenses are net of refunds. Transfers are excluded from income/expenses. Savings and investments are not expenses. Loan money borrowed/lent and principal repayments are not income or expenses (loan interest paid is an expense). Forecasts are estimates.',
   }
 }
 
@@ -65,6 +72,21 @@ export function answerLocally(question: string, c: FinancialContext): string {
   const fact = (s: string) => out.push(`**FACT** — ${s}`)
   const pred = (s: string) => out.push(`**PREDICTION** — ${s}`)
   const rec = (s: string) => out.push(`**SUGGESTION** — ${s}`)
+
+  if (/\b(loans?|debt|owe|borrow|lent|lend)\b/.test(q)) {
+    const ls = c.loans || []
+    if (!ls.length) fact('You have no active loans recorded. Add one on the Loans page (borrowed or lent).')
+    else {
+      const owe = ls.filter(l => l.direction === 'borrowed'), owed = ls.filter(l => l.direction === 'lent')
+      if (owe.length) fact(`You owe ${f(owe.reduce((a, l) => a + l.outstanding, 0))}: ${owe.map(l => `${l.counterparty} ${f(l.outstanding)}${l.dueDate ? ` (due ${l.dueDate})` : ''}`).join('; ')}.`)
+      if (owed.length) fact(`Owed to you: ${f(owed.reduce((a, l) => a + l.outstanding, 0))}: ${owed.map(l => `${l.counterparty} ${f(l.outstanding)}`).join('; ')}.`)
+      const late = ls.filter(l => l.overdueDays)
+      if (late.length) rec(`${late.map(l => `${l.counterparty} is ${l.overdueDays} days overdue`).join('; ')} — ${late.some(l => l.direction === 'borrowed') ? 'pay overdue debts first to avoid penalties' : 'follow up on the overdue amount'}.`)
+      const costly = owe.filter(l => (l.interestRate || 0) >= 15)
+      if (costly.length) rec(`High-interest debt (${costly.map(l => `${l.counterparty} ${l.interestRate}%`).join(', ')}) usually costs more than investments earn — prioritise repaying it.`)
+    }
+    return out.join('\n\n')
+  }
 
   if (/safe|can i (afford|spend)|how much can/.test(q)) {
     if (c.safeToSpend) {

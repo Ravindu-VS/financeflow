@@ -64,7 +64,7 @@ export default function PlanningPage() {
                 <div key={r.id} className={`py-3 flex flex-wrap items-center gap-3 ${r.active ? '' : 'opacity-50'}`}>
                   <span className="text-xl">{getCategory(r.category).icon}</span>
                   <div className="flex-1 min-w-[180px]">
-                    <p className="font-medium text-gray-900 dark:text-white">{r.description || getCategory(r.category).label} {r.isBill && <span className="text-[10px] px-1.5 rounded bg-amber-100 text-amber-700">BILL</span>}</p>
+                    <p className="font-medium text-gray-900 dark:text-white">{r.description || getCategory(r.category).label} {r.isBill && <span className="text-[10px] px-1.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 dark:bg-amber-900/40 dark:text-amber-300">BILL</span>}</p>
                     <p className="text-xs text-gray-500">{r.type} · {frequencyLabel(r)} · {formatCurrency(r.amount)}{r.variableAmount ? ' (est.)' : ''} · next {next ? formatDateKey(next, { year: true }) : '—'}{r.endDate ? ` · ends ${formatDateKey(r.endDate, { year: true })}` : ''}</p>
                   </div>
                   <label className="text-xs flex items-center gap-1" title="Starts recording from today; missed past occurrences are not back-filled"><input type="checkbox" checked={r.autoGenerate} onChange={e => {

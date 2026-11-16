@@ -171,3 +171,75 @@ describe('concurrent edits', () => {
     expect(resolveConcurrentEdit(before, null, { amount: 200 }).deleted).toBe(true)
   })
 })
+
+import { summarize as summarizeL, balanceEffects as effectsL, loanStatus, loanTotals, loanTotalsAsOf, netWorth as netWorthL, cashFlowStatement } from '..'
+import type { Loan } from '..'
+
+describe('loans', () => {
+  const loan: Loan = { id: 'L1', direction: 'borrowed', counterparty: 'Bank', principal: 100000, currency: 'LKR', startDate: '2026-09-01', dueDate: '2026-11-01', status: 'active' }
+  const lent: Loan = { id: 'L2', direction: 'lent', counterparty: 'Nimal', principal: 20000, currency: 'LKR', startDate: '2026-10-01', status: 'active' }
+  const txs = [
+    tx({ id: 'a', type: 'loan_received', amount: 100000, date: '2026-09-01', category: 'loan_borrowed', loanId: 'L1', accountId: 'bank' }),
+    tx({ id: 'b', type: 'loan_repayment', amount: 30000, date: '2026-10-01', category: 'loan_repaid', loanId: 'L1', accountId: 'bank' }),
+    tx({ id: 'c', type: 'expense', amount: 1200, date: '2026-10-01', category: 'loan_interest', loanId: 'L1', accountId: 'bank' }),
+    tx({ id: 'd', type: 'loan_given', amount: 20000, date: '2026-10-01', category: 'loan_lent', loanId: 'L2', accountId: 'bank' }),
+    tx({ id: 'e', type: 'loan_collected', amount: 5000, date: '2026-11-05', category: 'loan_collected', loanId: 'L2', accountId: 'bank' }),
+  ]
+  it('loan money is never income or expense; interest is', () => {
+    const s = summarizeL(txs)
+    expect(s.income).toBe(0)
+    expect(s.expenses).toBe(1200)
+    expect(s.loanInflow).toBe(105000)
+    expect(s.loanOutflow).toBe(50000)
+    expect(s.availableCashChange).toBe(105000 - 50000 - 1200)
+  })
+  it('moves account balances the right way', () => {
+    expect(effectsL(txs[0])).toEqual([{ accountId: 'bank', delta: 100000 }])
+    expect(effectsL(txs[1])).toEqual([{ accountId: 'bank', delta: -30000 }])
+    expect(effectsL(txs[3])).toEqual([{ accountId: 'bank', delta: -20000 }])
+    expect(effectsL(txs[4])).toEqual([{ accountId: 'bank', delta: 5000 }])
+  })
+  it('outstanding, progress, overdue and interest', () => {
+    const s = loanStatus(loan, txs, '2026-11-13')
+    expect(s.principal).toBe(100000)
+    expect(s.repaid).toBe(30000)
+    expect(s.outstanding).toBe(70000)
+    expect(s.pct).toBe(30)
+    expect(s.interest).toBe(1200)
+    expect(s.overdueDays).toBe(12)
+    const closed = loanStatus({ ...loan, status: 'repaid', closedDate: '2026-11-10' }, txs, '2026-11-13')
+    expect(closed.outstanding).toBe(0)
+    expect(closed.overdueDays).toBeNull()
+  })
+  it('totals feed net worth: owed to you is an asset, debt a liability', () => {
+    const t = loanTotals([loan, lent], txs, '2026-11-13')
+    expect(t).toEqual({ owedToYou: 15000, youOwe: 70000, overdue: 1 })
+    const nw = netWorthL([{ id: 'bank', name: 'Bank', type: 'bank', currency: 'LKR', openingBalance: 0, balance: 200000 }], {}, 0, t)
+    expect(nw.assets).toBe(215000)
+    expect(nw.liabilities).toBe(70000)
+    expect(nw.netWorth).toBe(145000)
+  })
+  it('as-of totals ignore later repayments and reopen loans closed after the date', () => {
+    const t = loanTotalsAsOf([{ ...loan, status: 'repaid', closedDate: '2026-11-10' }, lent], txs, '2026-10-31')
+    expect(t.youOwe).toBe(70000)
+    expect(t.owedToYou).toBe(20000)
+  })
+  it('cash flow identity holds with loans', () => {
+    const acc = [{ id: 'bank', name: 'Bank', type: 'bank' as const, currency: 'LKR', openingBalance: 50000, balance: 0 }]
+    const cf = cashFlowStatement(acc, txs, { start: '2026-09-01', end: '2026-11-30', unit: 'month', label: '' } as any)
+    const closing = cf.openingBalance + cf.income + cf.refunds - cf.expenses - cf.savings - cf.investments + cf.transfersIn - cf.transfersOut + cf.adjustments + cf.loanInflow - cf.loanOutflow
+    expect(Math.round(closing)).toBe(Math.round(cf.closingBalance))
+  })
+})
+
+describe('loan alerts', () => {
+  it('overdue debt is urgent; money owed to you due soon is info', () => {
+    const a = computeAlerts({ today: '2026-11-16', formatMoney: n => `Rs.${n}`, upcoming: [], budgets: [], goals: [], anomalies: [],
+      loans: [
+        { id: 'L1', direction: 'borrowed', counterparty: 'Bank', outstanding: 5000, dueDate: '2026-11-10', dueInDays: null, overdueDays: 6 },
+        { id: 'L2', direction: 'lent', counterparty: 'Nimal', outstanding: 15000, dueDate: '2026-11-30', dueInDays: 14, overdueDays: null },
+        { id: 'L3', direction: 'lent', counterparty: 'Done', outstanding: 0, dueDate: '2026-11-01', dueInDays: null, overdueDays: 15 },
+      ] })
+    expect(a.map(x => [x.id, x.severity])).toEqual([['loan_L1_overdue_2026-11-10', 'danger'], ['loan_L2_due_2026-11-30', 'info']])
+  })
+})

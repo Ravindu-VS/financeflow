@@ -88,7 +88,9 @@ export async function syncToBackend(txs: Transaction[], goals: any[], holdings: 
   if (!auth.currentUser) throw new Error('Not signed in')
   const { data } = await backend.post('/api/v1/sync/firestore', syncPayload(txs, goals, holdings, since, until), { timeout: 45000 })
   try { localStorage.setItem(SYNC_KEY, new Date().toISOString()) } catch { /* ignore */ }
-  return data as { transactions: { upserted: number; deleted: number }; goals: number; holdings: number }
+  const r = data as { synced: { transactions: number; goals: number; holdings: number }; removed: number | Record<string, number> }
+  const removed = typeof r.removed === 'number' ? r.removed : Object.values(r.removed || {}).reduce((s, n) => s + (Number(n) || 0), 0)
+  return { transactions: { upserted: r.synced?.transactions ?? 0, deleted: removed } }
 }
 
 // ── LLM ─────────────────────────────────────────────────────────────────────

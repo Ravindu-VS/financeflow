@@ -23,7 +23,8 @@ from models.models import User
 router = APIRouter()
 
 TxType = Literal['income', 'expense', 'transfer', 'investment', 'withdrawal', 'savings_contribution',
-                 'savings_withdrawal', 'refund', 'reimbursement', 'adjustment']
+                 'savings_withdrawal', 'refund', 'reimbursement', 'adjustment',
+                 'loan_received', 'loan_repayment', 'loan_given', 'loan_collected']
 
 
 class SyncTransaction(BaseModel):

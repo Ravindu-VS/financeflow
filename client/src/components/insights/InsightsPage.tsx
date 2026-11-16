@@ -46,11 +46,11 @@ export default function InsightsPage() {
         <Card>
           <SectionHeader title="Rest-of-month forecast" subtitle={`Confidence: ${d.forecast.confidence}`} />
           <div className="grid grid-cols-3 gap-3 text-center">
-            <div><p className="text-xs text-gray-500">Likely low</p><p className="font-semibold tabular-nums">{formatCurrency(d.forecast.low)}</p></div>
-            <div><p className="text-xs text-gray-500">Expected spending</p><p className="text-xl font-bold text-blue-600 tabular-nums">{formatCurrency(d.forecast.expected)}</p></div>
-            <div><p className="text-xs text-gray-500">Likely high</p><p className="font-semibold tabular-nums">{formatCurrency(d.forecast.high)}</p></div>
+            <div><p className="text-xs text-gray-500">Likely low</p><p className="font-semibold tabular-nums">{formatCurrency(Math.round(d.forecast.low))}</p></div>
+            <div><p className="text-xs text-gray-500">Expected spending</p><p className="text-xl font-bold text-blue-600 tabular-nums">{formatCurrency(Math.round(d.forecast.expected))}</p></div>
+            <div><p className="text-xs text-gray-500">Likely high</p><p className="font-semibold tabular-nums">{formatCurrency(Math.round(d.forecast.high))}</p></div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">Expected end-of-month net cash flow ≈ <b>{formatCurrency(d.summary.income + d.safeToSpend.expectedIncome - d.forecast.expected)}</b> (income so far + expected recurring income − forecast spending).</p>
+          <p className="text-xs text-gray-500 mt-2">Expected end-of-month net cash flow ≈ <b>{formatCurrency(Math.round(d.summary.income + d.safeToSpend.expectedIncome - d.forecast.expected))}</b> (income so far + expected recurring income − forecast spending).</p>
           <p className="text-xs text-gray-400 mt-1">{d.forecast.basis} Predictions are estimates, not guarantees.</p>
         </Card>
       )}

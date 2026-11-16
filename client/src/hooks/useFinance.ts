@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { usePeriodStore } from '../store/periodStore'
 import { useFinanceStore, usePeriodTransactions, useBalances } from '../store/financeStore'
 import {
-  summarize, previousPeriod, expensesByCategory, incomeByCategory, availableCash, netWorth, safeToSpend,
+  summarize, previousPeriod, expensesByCategory, incomeByCategory, availableCash, netWorth, loanTotals, safeToSpend,
   todayKey, startOfMonth, generateInsights, upcomingOccurrences, goalRequiredMonthly, legacyToDateKey,
   forecastMonthExpenses, forecastCategory, pctChange, diffDays, addDays, addMonths, type Period, type PeriodSummary,
 } from '../lib/finance'
@@ -16,7 +16,7 @@ export function usePeriodData(periodOverride?: Period) {
   const prev = useMemo(() => previousPeriod(period), [period.start, period.end])
   const { txs, loading } = usePeriodTransactions(period)
   const { txs: prevTxs } = usePeriodTransactions(prev)
-  const { accounts, rules, budgets, goals, holdings, settings, transactions, windowStart } = useFinanceStore()
+  const { accounts, rules, budgets, goals, holdings, settings, transactions, windowStart, loans, loanTxs } = useFinanceStore()
   const balances = useBalances()
   const today = todayKey()
   const isCurrentMonth = period.unit === 'month' && period.start === startOfMonth(today)
@@ -33,7 +33,8 @@ export function usePeriodData(periodOverride?: Period) {
     const byIncome = incomeByCategory(txs)
     const cash = availableCash(accounts, balances)
     const holdingsValue = holdings.filter(h => h.status !== 'sold').reduce((s, h) => s + (Number(h.currentValue) || Number(h.amount) || 0), 0)
-    const nw = netWorth(accounts, balances, holdingsValue)
+    const loanSum = loanTotals(loans, loanTxs, today)
+    const nw = netWorth(accounts, balances, holdingsValue, loanSum)
 
     // Budgets scale to the selected period: monthly budgets × number of months covered (approx for non-month periods)
     const totalDays = diffDays(period.start, period.end) + 1
@@ -47,7 +48,9 @@ export function usePeriodData(periodOverride?: Period) {
       return { id: b.id, name: b.name || b.category, category: b.category, amount, spent, remaining: amount - spent, pct: amount ? Math.round(spent / amount * 100) : 0, forecast }
     }).sort((a, b) => b.pct - a.pct)
     const totalBudget = settings.budgetMethod === 'monthly' && settings.monthlyBudget ? Math.round(settings.monthlyBudget * factor) : budgetStatus.reduce((s, b) => s + b.amount, 0)
-    const remainingBudget = totalBudget ? totalBudget - summary.netExpenses : null
+    // A single monthly limit covers all spending; category budgets only cover their own categories
+    const budgetedSpent = settings.budgetMethod === 'monthly' && settings.monthlyBudget ? summary.netExpenses : budgetStatus.reduce((s, b) => s + b.spent, 0)
+    const remainingBudget = totalBudget ? totalBudget - budgetedSpent : null
 
     const savingsDone = isCurrentMonth ? summary.savings : 0
     const investDone = isCurrentMonth ? summary.investments : 0
@@ -110,6 +113,6 @@ export function usePeriodData(periodOverride?: Period) {
         netCashFlow: pctChange(summary.netCashFlow, previousToDate.netCashFlow),
       },
     }
-  }, [txs, prevTxs, accounts, balances, rules, budgets, goals, holdings, settings, transactions, windowStart, period, prev, loading])
+  }, [txs, prevTxs, accounts, balances, rules, budgets, goals, holdings, settings, transactions, windowStart, period, prev, loading, loans, loanTxs])
 }
 

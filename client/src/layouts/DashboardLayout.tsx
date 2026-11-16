@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import NotificationCenter from '../components/notifications/NotificationCenter'
+import Avatar from '../components/ui/Avatar'
 import { useAutoSync } from '../hooks/useBackendSync'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
@@ -10,6 +11,7 @@ import TransactionForm from '../components/finance/TransactionForm'
 import { useThemeStore } from '../store/themeStore'
 import {
   HomeIcon,
+  ScaleIcon,
   BanknotesIcon,
   CreditCardIcon,
   ChartBarIcon,
@@ -23,7 +25,6 @@ import {
   XMarkIcon,
   SunIcon,
   MoonIcon,
-  BellIcon,
   WalletIcon,
   GlobeAltIcon,
   CurrencyDollarIcon,
@@ -44,6 +45,7 @@ const navigation = [
   { name: 'Cash Flow', href: '/cashflow', icon: ArrowsRightLeftIcon },
   { name: 'Calendar', href: '/calendar', icon: CalendarDaysIcon },
   { name: 'Accounts & Net Worth', href: '/accounts', icon: BankIcon },
+  { name: 'Loans', href: '/loans', icon: ScaleIcon },
   { name: 'Budgets', href: '/budgets', icon: ChartPieIcon },
   { name: 'Planning & Bills', href: '/planning', icon: ClipboardDocumentListIcon },
   { name: 'Savings Goals', href: '/savings', icon: WalletIcon },
@@ -98,7 +100,7 @@ const bottomNavigation = [
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user, logout } = useAuthStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const { resolved: theme, toggleTheme } = useThemeStore()
   const navigate = useNavigate()
   const initFinance = useFinanceStore(s => s.init)
   const stopFinance = useFinanceStore(s => s.stop)
@@ -224,9 +226,7 @@ export default function DashboardLayout() {
           {/* User section */}
           <div className="p-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 gradient-green rounded-full flex items-center justify-center text-white font-medium">
-                {user?.profile.firstName?.[0]?.toUpperCase() || 'U'}
-              </div>
+              <Avatar size={40} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                   {user?.profile.firstName} {user?.profile.lastName}
@@ -280,11 +280,8 @@ export default function DashboardLayout() {
             <NotificationCenter />
 
             {/* User avatar (mobile) */}
-            <NavLink
-              to="/profile"
-              className="lg:hidden w-8 h-8 gradient-green rounded-full flex items-center justify-center text-white text-sm font-medium"
-            >
-              {user?.profile.firstName?.[0]?.toUpperCase() || 'U'}
+            <NavLink to="/profile" aria-label="Profile" className="lg:hidden">
+              <Avatar size={32} />
             </NavLink>
           </div>
         </header>

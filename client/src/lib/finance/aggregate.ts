@@ -32,7 +32,7 @@ export function filterPeriod(txs: Transaction[], r: PeriodRange): Transaction[] 
 }
 
 export function summarize(txs: Transaction[]): PeriodSummary {
-  let income = 0, expenses = 0, refunds = 0, savings = 0, investments = 0, transfers = 0, count = 0
+  let income = 0, expenses = 0, refunds = 0, savings = 0, investments = 0, transfers = 0, count = 0, loanIn = 0, loanOut = 0
   for (const t of txs) {
     if (!isCounted(t)) continue
     const a = Math.abs(Number(t.amount) || 0)
@@ -48,6 +48,10 @@ export function summarize(txs: Transaction[]): PeriodSummary {
       case 'withdrawal': investments -= a; break
       case 'transfer': transfers += a; break
       case 'adjustment': break
+      case 'loan_received':
+      case 'loan_collected': loanIn += a; break
+      case 'loan_given':
+      case 'loan_repayment': loanOut += a; break
     }
   }
   const netExpenses = expenses - refunds
@@ -61,7 +65,9 @@ export function summarize(txs: Transaction[]): PeriodSummary {
     investments: round2(investments),
     transfers: round2(transfers),
     netCashFlow: round2(netCashFlow),
-    availableCashChange: round2(netCashFlow - savings - investments),
+    availableCashChange: round2(netCashFlow - savings - investments + loanIn - loanOut),
+    loanInflow: round2(loanIn),
+    loanOutflow: round2(loanOut),
     savingsRate: income > 0 ? round2(((savings + investments) / income) * 100) : 0,
     surplusRate: income > 0 ? round2((netCashFlow / income) * 100) : 0,
     count,
@@ -170,10 +176,14 @@ export function balanceEffects(t: Pick<Transaction, 'type' | 'amount' | 'account
     case 'reimbursement':
     case 'savings_withdrawal':
     case 'withdrawal':
+    case 'loan_received':
+    case 'loan_collected':
       if (from) out.push({ accountId: from, delta: a })
       if (to && (t.type === 'savings_withdrawal' || t.type === 'withdrawal')) out.push({ accountId: to, delta: -a })
       break
     case 'expense':
+    case 'loan_given':
+    case 'loan_repayment':
       if (from) out.push({ accountId: from, delta: -a })
       break
     case 'transfer':

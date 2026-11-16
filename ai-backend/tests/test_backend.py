@@ -189,3 +189,65 @@ async def test_health_score_uses_synced_data(client):
     r = await client.get("/api/v1/health-score/calculate", headers=h)
     assert r.status_code == 200, r.text
     assert 0 <= r.json()["score"] <= 100
+
+
+async def test_family_group_create_join_summary_leave(client):
+    a, b = f"fa-{uuid.uuid4().hex[:6]}", f"fb-{uuid.uuid4().hex[:6]}"
+    ha, hb = {"Authorization": f"Bearer {firebase_token(a)}"}, {"Authorization": f"Bearer {firebase_token(b)}"}
+    m = date.today().strftime("%Y-%m")
+    for h, inc, exp in ((ha, 100000, 40000), (hb, 80000, 30000)):
+        await client.post("/api/v1/sync/firestore", headers=h, json={"since": f"{m}-01", "until": f"{m}-28", "transactions": [
+            tx(1, type="income", amount=inc, category="salary", date=f"{m}-01"), tx(2, amount=exp, category="groceries", date=f"{m}-02")]})
+    r = await client.post("/api/v1/family/create", headers=ha, json={"name": "Perera Family"})
+    assert r.status_code == 200, r.text
+    code = r.json()["group"]["invite_code"]
+    assert (await client.post("/api/v1/family/create", headers=ha, json={"name": "Again"})).status_code == 409
+    assert (await client.post("/api/v1/family/join", headers=hb, json={"code": "not-a-valid-code"})).status_code == 404
+    r = await client.post("/api/v1/family/join", headers=hb, json={"code": code})
+    assert r.status_code == 200 and len(r.json()["members"]) == 2
+    s = (await client.get("/api/v1/family/summary", headers=ha)).json()
+    assert s["income"] == 180000 and s["expenses"] == 70000 and s["net"] == 110000
+    assert s["top_categories"][0]["category"] == "groceries"
+    # owner leaves → ownership passes to the other member; last member leaving deletes the group
+    await client.post("/api/v1/family/leave", headers=ha)
+    mb = (await client.get("/api/v1/family/members", headers=hb)).json()
+    assert [x["is_owner"] for x in mb["members"]] == [True]
+    await client.post("/api/v1/family/leave", headers=hb)
+    assert (await client.get("/api/v1/family/members", headers=hb)).json()["group"] is None
+
+
+async def test_advisor_enroll_link_and_view_client(client):
+    adv, cli, other = (f"{p}-{uuid.uuid4().hex[:6]}" for p in ("adv", "cli", "oth"))
+    ha, hc, ho = ({"Authorization": f"Bearer {firebase_token(s)}"} for s in (adv, cli, other))
+    assert (await client.get("/api/v1/advisor/clients", headers=ha)).status_code == 403
+    r = await client.post("/api/v1/advisor/enroll", headers=ha)
+    assert r.status_code == 200, r.text
+    code = r.json()["advisor_code"]
+    assert (await client.get("/api/v1/auth/me", headers=ha)).json()["is_advisor"] is True
+    assert (await client.get("/api/v1/advisor/clients", headers=ha)).json()["clients"] == []
+    # a non-advisor's id is not a valid advisor code
+    me_other = (await client.get("/api/v1/auth/me", headers=ho)).json()
+    assert (await client.post("/api/v1/advisor/link", headers=hc, json={"code": me_other["id"]})).status_code == 404
+    r = await client.post("/api/v1/advisor/link", headers=hc, json={"code": code})
+    assert r.status_code == 200 and r.json()["my_advisor"] is not None
+    clients = (await client.get("/api/v1/advisor/clients", headers=ha)).json()["clients"]
+    assert len(clients) == 1
+    ov = await client.get(f"/api/v1/advisor/clients/{clients[0]['id']}/overview", headers=ha)
+    assert ov.status_code == 200, ov.text
+    # client withdraws consent → advisor loses access
+    await client.post("/api/v1/advisor/unlink", headers=hc)
+    assert (await client.get("/api/v1/advisor/clients", headers=ha)).json()["clients"] == []
+    assert (await client.get(f"/api/v1/advisor/clients/{clients[0]['id']}/overview", headers=ha)).status_code == 404
+
+
+async def test_sync_accepts_loan_transactions_not_counted_as_income_or_expense(client):
+    h = {"Authorization": f"Bearer {firebase_token(f'loan-{uuid.uuid4().hex[:6]}')}"}
+    r = await client.post("/api/v1/sync/firestore", headers=h, json={"since": "2026-11-01", "until": "2026-11-30", "transactions": [
+        tx(1, type="loan_received", amount=200000, category="loan_borrowed"),
+        tx(2, type="loan_repayment", amount=20000, category="loan_repaid"),
+        tx(3, type="loan_given", amount=15000, category="loan_lent"),
+        tx(4, type="expense", amount=1500, category="loan_interest")]})
+    assert r.status_code == 200, r.text
+    assert r.json()["synced"]["transactions"] == 4
+    s = (await client.get("/api/v1/sync/status", headers=h)).json()
+    assert s is not None

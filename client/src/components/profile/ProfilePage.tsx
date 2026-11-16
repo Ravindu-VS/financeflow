@@ -1,7 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
+import { useFinanceStore } from '../../store/financeStore'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
+import { compressImage } from '../../utils/image'
 import { Card, SectionHeader, Button, Input, Select, Textarea } from '../ui'
 import {
   UserCircleIcon,
@@ -18,6 +20,17 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { transactions, goals, holdings } = useFinanceStore()
+  const firebaseUser = useAuthStore(s => s.firebaseUser)
+  const counts = useMemo(() => ({
+    income: transactions.filter(t => t.type === 'income' && t.status !== 'void').length,
+    expense: transactions.filter(t => t.type === 'expense' && t.status !== 'void').length,
+  }), [transactions])
+  const memberSince = useMemo(() => {
+    const raw: any = user?.createdAt
+    const d = raw?.toDate ? raw.toDate() : raw ? new Date(raw) : firebaseUser?.metadata?.creationTime ? new Date(firebaseUser.metadata.creationTime) : null
+    return d && !isNaN(d.getTime()) ? d.toLocaleDateString('en-LK', { month: 'long', year: 'numeric' }) : '—'
+  }, [user?.createdAt, firebaseUser])
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
     defaultValues: {
@@ -33,7 +46,7 @@ export default function ProfilePage() {
 
   const onSubmit = async (data: any) => {
     try {
-      updateUser({ profile: { ...user?.profile, ...data } })
+      await updateUser({ profile: { ...user?.profile, ...data } })
       setIsEditing(false)
       toast.success('Profile updated successfully')
     } catch (error: any) {
@@ -63,28 +76,23 @@ export default function ProfilePage() {
 
     setUploadingPhoto(true)
     try {
-      // Convert to base64 for local storage
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const base64 = reader.result as string
-        updateUser({ profile: { firstName: user?.profile?.firstName || '', ...user?.profile, avatar: base64 } })
-        toast.success('Profile picture updated!')
-        setUploadingPhoto(false)
-      }
-      reader.onerror = () => {
-        toast.error('Failed to read image file')
-        setUploadingPhoto(false)
-      }
-      reader.readAsDataURL(file)
+      // 256px square JPEG (~20–40 KB) so it fits comfortably in the profile document
+      const avatar = await compressImage(file, 256, 0.82, true)
+      await updateUser({ profile: { ...user?.profile, firstName: user?.profile?.firstName || '', avatar } })
+      toast.success('Profile picture updated!')
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update profile picture')
+      toast.error(error?.message?.includes('longer than') ? 'That image is too large — try a smaller one' : 'Could not save your profile picture')
+    } finally {
       setUploadingPhoto(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
-  const handleRemovePhoto = () => {
-    updateUser({ profile: { firstName: user?.profile?.firstName || '', ...user?.profile, avatar: undefined } })
-    toast.success('Profile picture removed')
+  const handleRemovePhoto = async () => {
+    try {
+      await updateUser({ profile: { ...user?.profile, firstName: user?.profile?.firstName || '', avatar: '' } })
+      toast.success('Profile picture removed')
+    } catch { toast.error('Could not remove the picture') }
   }
 
   return (
@@ -160,7 +168,7 @@ export default function ProfilePage() {
             </h2>
             <p className="text-gray-500 dark:text-gray-400">{user?.email}</p>
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-              Member since {new Date(user?.createdAt || '').toLocaleDateString('en-LK', { month: 'long', year: 'numeric' })}
+              Member since {memberSince}
             </p>
             <button
               onClick={handlePhotoClick}
@@ -303,19 +311,19 @@ export default function ProfilePage() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="text-center">
-          <p className="text-2xl font-bold text-primary-500">0</p>
+          <p className="text-2xl font-bold text-primary-500">{counts.income}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">Income Entries</p>
         </Card>
         <Card className="text-center">
-          <p className="text-2xl font-bold text-red-500">0</p>
+          <p className="text-2xl font-bold text-red-500">{counts.expense}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">Expense Entries</p>
         </Card>
         <Card className="text-center">
-          <p className="text-2xl font-bold text-blue-500">0</p>
+          <p className="text-2xl font-bold text-blue-500">{goals.length}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">Savings Goals</p>
         </Card>
         <Card className="text-center">
-          <p className="text-2xl font-bold text-purple-500">0</p>
+          <p className="text-2xl font-bold text-purple-500">{holdings.filter((h: any) => h.status !== 'sold').length}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">Investments</p>
         </Card>
       </div>

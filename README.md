@@ -323,3 +323,7 @@ Auth:       Firebase Auth (RS256 ID tokens verified by the backend) · JWT/OIDC 
 ---
 
 *Built as a WSO2 Internship Portfolio Project — Ravindu VS*
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](./LICENSE).

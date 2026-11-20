@@ -7,7 +7,7 @@ import type { RecurringRule } from './types'
 import { addDays, diffDays, monthKey } from './dates'
 
 export type AlertSeverity = 'info' | 'warning' | 'danger'
-export interface FinanceAlert { id: string; severity: AlertSeverity; title: string; body: string; link: string; kind: 'bill' | 'budget' | 'goal' | 'unusual' | 'safe_to_spend' | 'sync' | 'loan' }
+export interface FinanceAlert { id: string; severity: AlertSeverity; title: string; body: string; link: string; kind: 'bill' | 'budget' | 'goal' | 'unusual' | 'safe_to_spend' | 'sync' | 'loan' | 'backup' }
 
 export interface AlertInput {
   today: string
@@ -18,6 +18,8 @@ export interface AlertInput {
   safeToSpend?: { amount: number; perDay: number } | null
   loans?: { id: string; direction: 'borrowed' | 'lent'; counterparty: string; outstanding: number; dueDate?: string; dueInDays: number | null; overdueDays: number | null }[]
   lowSafeToSpendPerDay?: number
+  /** Days since the last backup when a reminder is due (Infinity = never backed up). */
+  backupDue?: { days: number; localOnly: boolean } | null
   formatMoney: (n: number) => string
 }
 
@@ -61,6 +63,14 @@ export function computeAlerts(i: AlertInput): FinanceAlert[] {
       id: `sts_${i.today}`, kind: 'safe_to_spend', severity: neg ? 'danger' : 'warning', link: '/dashboard',
       title: neg ? 'Upcoming commitments exceed your cash' : 'Safe-to-spend is running low',
       body: neg ? `Short by ${i.formatMoney(-i.safeToSpend.amount)} before month end` : `${i.formatMoney(i.safeToSpend.perDay)} per day until month end`,
+    })
+  }
+  if (i.backupDue) {
+    const never = !Number.isFinite(i.backupDue.days)
+    out.push({
+      id: `backup_${i.today}`, kind: 'backup', severity: i.backupDue.localOnly ? 'warning' : 'info', link: '/settings?tab=privacy',
+      title: never ? 'Back up your data' : `Last backup was ${i.backupDue.days} days ago`,
+      body: i.backupDue.localOnly ? 'Your data is only on this device — a lost or reset phone means lost data.' : 'Keep an encrypted copy in a file or your Google Drive.',
     })
   }
   const rank = { danger: 0, warning: 1, info: 2 }

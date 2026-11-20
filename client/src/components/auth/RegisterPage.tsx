@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
+import { setPendingMode } from '../../lib/datastore/mode'
 import { Button, Input } from '../ui'
 import { EyeIcon, EyeSlashIcon, EnvelopeIcon, LockClosedIcon, UserIcon } from '@heroicons/react/24/outline'
 
@@ -17,12 +18,14 @@ interface RegisterFormData {
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
+  const [deviceOnly, setDeviceOnly] = useState(false)
   const { register: registerUser, loginWithGoogle } = useAuthStore()
 
   const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<RegisterFormData>()
   const password = watch('password')
 
   const onSubmit = async (data: RegisterFormData) => {
+    setPendingMode(deviceOnly ? 'local' : null)
     try {
       await registerUser({
         email: data.email,
@@ -37,6 +40,7 @@ export default function RegisterPage() {
   }
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true)
+    setPendingMode(deviceOnly ? 'local' : null)
     try {
       await loginWithGoogle()
       toast.success('Account created successfully!')
@@ -158,6 +162,20 @@ export default function RegisterPage() {
             </div>
           </div>
         )}
+
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-gray-50 dark:bg-gray-800">
+          <input
+            type="checkbox"
+            id="device-only"
+            className="mt-1 rounded text-primary-500"
+            checked={deviceOnly}
+            onChange={e => setDeviceOnly(e.target.checked)}
+          />
+          <label htmlFor="device-only" className="text-sm text-gray-600 dark:text-gray-300">
+            <span className="font-medium text-gray-900 dark:text-white">📱 Keep my financial data only on this device</span>
+            <span className="block text-xs mt-0.5">Nothing is stored in the cloud. You can make encrypted backups and change this later in Settings → Privacy &amp; Backup.</span>
+          </label>
+        </div>
 
         <div className="flex items-start gap-2">
           <input

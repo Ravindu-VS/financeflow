@@ -46,9 +46,11 @@ service cloud.firestore {
           && (!('balance' in request.resource.data) || request.resource.data.balance is number);
       }
 
+      // Append-only: entries are never edited. The owner may delete them only to erase their
+      // account data (moving to local-only storage, or restoring a backup).
       match /auditLogs/{id} {
-        allow read, create: if isOwner(uid);
-        allow update, delete: if false;
+        allow read, create, delete: if isOwner(uid);
+        allow update: if false;
       }
 
       // recurringRules, snapshots, meta, budgets, savingsGoals, investments, and the

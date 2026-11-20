@@ -5,6 +5,7 @@ import { serviceStatus, gatewayUrl, type ServiceStatus } from '../../services/ba
 import { useSyncStatus, runSync } from '../../hooks/useBackendSync'
 import { useFinanceStore } from '../../store/financeStore'
 import { settingsService } from '../../services/financeService'
+import { useStorageMode } from '../../lib/datastore/mode'
 
 const DOT: Record<ServiceStatus['status'], string> = { online: 'bg-green-500', degraded: 'bg-amber-500', offline: 'bg-red-500', not_configured: 'bg-gray-400' }
 const LABEL: Record<ServiceStatus['status'], string> = { online: 'Online', degraded: 'Degraded', offline: 'Offline', not_configured: 'Not configured' }
@@ -14,6 +15,7 @@ export default function ServicesPanel() {
   const [list, setList] = useState<ServiceStatus[] | null>(null)
   const [checking, setChecking] = useState(false)
   const sync = useSyncStatus()
+  const localOnly = useStorageMode(s => s.mode === 'local')
   const settings = useFinanceStore(s => s.settings)
   const [key, setKey] = useState('')
   const [model, setModel] = useState(settings.geminiModel || 'gemini-2.5-flash')
@@ -45,11 +47,11 @@ export default function ServicesPanel() {
           ))}
           {!list && <li className="text-sm text-gray-500">Checking services…</li>}
         </ul>
-        <p className="text-xs text-gray-500 mt-3">Your data lives in Firestore and works offline. The gateway, AI backend and PostgreSQL add server-side AI, reports and analytics.</p>
+        <p className="text-xs text-gray-500 mt-3">{localOnly ? 'Your data is stored only on this device. The gateway, AI backend and PostgreSQL receive it only when you use AI, server reports, family or advisor features.' : 'Your data lives in Firestore and works offline. The gateway, AI backend and PostgreSQL add server-side AI, reports and analytics.'}</p>
       </Card>
 
       <Card>
-        <SectionHeader title="Sync to PostgreSQL" subtitle="Automatic after changes; runs again when you reconnect" />
+        <SectionHeader title="Sync to PostgreSQL" subtitle={localOnly ? 'Off in local-only mode — runs only when you use an AI or server feature, or tap Sync now' : 'Automatic after changes; runs again when you reconnect'} />
         <div className="space-y-2 text-sm">
           <p>Last sync: <b>{sync.last ? new Date(sync.last).toLocaleString() : 'never'}</b>{sync.counts ? ` · ${sync.counts.upserted} updated, ${sync.counts.deleted} removed` : ''}</p>
           {sync.error && <p className="text-red-600">Last error: {sync.error}</p>}

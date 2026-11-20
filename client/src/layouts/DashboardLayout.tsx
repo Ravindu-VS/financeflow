@@ -5,6 +5,7 @@ import { useAutoSync } from '../hooks/useBackendSync'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useFinanceStore } from '../store/financeStore'
+import LocalModeBanner from '../components/privacy/LocalModeBanner'
 import { auth } from '../config/firebase'
 import QuickAdd from '../components/finance/QuickAdd'
 import TransactionForm from '../components/finance/TransactionForm'
@@ -288,6 +289,7 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-4 lg:p-6">
+          <LocalModeBanner />
           <Outlet />
         </main>
 

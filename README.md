@@ -52,7 +52,35 @@ Secrets (Gemini key, database URL, allowed origins) live only in Vercel environm
 - **Receipt scanning** — on-device OCR fills in amount, date, shop and category for you to confirm.
 - **Themes** — Light, Dark or Match device; text contrast checked automatically in both themes.
 - **Profile picture** in the sidebar, notification centre, budgets/forecast/investment advisor, family accounts and advisor linking.
+- **Privacy mode** — keep financial data only on your device, with AES-256 encrypted backups to a file or your own Google Drive and backup reminders (see below).
 - **Smooth updates** — if a new version is deployed while the app is open, it reloads once instead of showing a broken page.
+
+## 🔒 Privacy: local-only storage & encrypted backups
+
+Each user chooses where their financial data lives (**Settings → Privacy & Backup**, or a checkbox when signing up):
+
+| | ☁️ Cloud sync (default) | 📱 This device only |
+|---|---|---|
+| Where data is stored | Private Firestore account (per-user security rules) | IndexedDB on this device only |
+| What stays in the cloud | Everything | Only `users/{uid} = { storageMode: 'local' }` — no financial data |
+| Multiple devices | Yes, synced live | Move data between devices with a backup |
+| Background copy to the AI backend | Automatic | Off — sent only when an AI/server feature is used |
+
+- **Switching** copies every record, verifies the copy, and only then deletes the other side (cloud → device deletes the Firestore data; device → cloud removes the device copy).
+- **Implementation:** `client/src/lib/datastore/` is a Firestore-compatible facade. The app's data code is unchanged; each call goes to Firestore or to an on-device engine (`localEngine.ts`: queries, batches, transactions, `serverTimestamp`/`increment`, live listeners, all committed to IndexedDB).
+- **Encrypted backups** (`client/src/services/backup.ts`): every record, gzip-compressed and encrypted on the device with **AES-256-GCM**, key derived from the user's password with **PBKDF2-SHA-256 (310,000 rounds)**. Only the date and record count are readable, and they are authenticated. Without the password nobody — including us — can open a backup.
+  - **File:** download a `.ffbackup` file; restore it on any device.
+  - **Google Drive:** saved in the hidden app-data folder of the user's own Drive (`drive.appdata` scope — FinanceFlow cannot see any other file); the newest 10 are kept.
+  - **Reminders:** weekly (default for local-only), monthly or off, shown in the notification bell.
+- **New device:** a local-only account on an empty device is offered *Restore a backup* instead of starting over.
+
+**Enabling Google Drive backup** (one-time, by the project owner):
+1. Google Cloud console → project `financeflow-a6aa0` → *APIs & Services* → enable **Google Drive API**.
+2. *Credentials* → the OAuth web client (the "auto created by Google Service" one works) → add the site origins to **Authorized JavaScript origins**: `https://financeflow-eight-dun.vercel.app`, `https://ravindu-vs.github.io`.
+3. *OAuth consent screen* → add the scope `https://www.googleapis.com/auth/drive.appdata`.
+4. Set the client ID as `VITE_GOOGLE_CLIENT_ID` in the Vercel frontend project (and the GitHub Pages build), or paste it into `GOOGLE_CLIENT_ID` in `client/src/services/googleDrive.ts`. It is a public identifier, not a secret.
+
+Until then the Drive section says it is not switched on, and file backups work as normal.
 
 ## 💳 Transaction-centric model (Nov 2026 upgrade)
 
@@ -65,8 +93,8 @@ Every financial event is an independent **transaction**: lunch today, a sudden v
 
 ```bash
 npm ci && npm run dev        # app at http://localhost:3000/financeflow/
-npm test                     # 118 financial-logic unit tests (incl. loans, Sinhala)
-npm run test:e2e             # 13 Playwright end-to-end tests (every page, loans, voice, themes, contrast)
+npm test                     # 127 unit tests (finance logic, loans, Sinhala, on-device store, encrypted backups)
+npm run test:e2e             # 14 Playwright end-to-end tests (every page, loans, voice, themes, contrast, local-only mode & backup/restore)
 cd ../ai-backend && pytest   # 14 backend tests (sync, family, advisor, loans)
 firebase deploy --only firestore:rules
 ```
@@ -251,6 +279,7 @@ Full documentation at: `http://localhost:8000/docs`
 - Rate limiting prevents abuse
 - CORS configured to whitelist only frontend origins
 - Audit logging for all data modifications
+- Optional local-only storage: financial data never leaves the device; backups encrypted client-side (AES-256-GCM + PBKDF2)
 
 ---
 

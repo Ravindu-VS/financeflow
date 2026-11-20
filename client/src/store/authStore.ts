@@ -3,6 +3,7 @@ import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth'
 import { authService } from '../services/firebaseService'
 import { auth } from '../config/firebase'
 import { User } from '../types'
+import { resolveStorage, clearStorageSession } from '../services/storage'
 
 interface AuthState {
   user: User | null
@@ -62,7 +63,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   initAuth: () => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Set authenticated immediately with basic info — no waiting for Firestore
+        // Decide where this user's data lives (cloud or this device) before any data is read.
+        try { await resolveStorage(firebaseUser.uid) } catch (e) { console.error('Storage setup failed:', e) }
+        // Set authenticated with basic info — the profile loads in the background
         set({
           user: createUserObject(firebaseUser, null),
           firebaseUser,
@@ -82,6 +85,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           console.error('Error loading profile:', error)
         }
       } else {
+        clearStorageSession()
         set({
           user: null,
           firebaseUser: null,

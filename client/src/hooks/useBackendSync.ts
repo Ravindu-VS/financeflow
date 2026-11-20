@@ -6,6 +6,7 @@ import { useEffect, useCallback } from 'react'
 import { create } from 'zustand'
 import { useFinanceStore } from '../store/financeStore'
 import { syncToBackend, lastSync, idToken } from '../services/backend'
+import { useStorageMode } from '../lib/datastore/mode'
 
 interface SyncState { syncing: boolean; last: string | null; error: string | null; counts?: { upserted: number; deleted: number } }
 export const useSyncStatus = create<SyncState>(() => ({ syncing: false, last: lastSync(), error: null }))
@@ -37,14 +38,17 @@ export function useSyncNow() {
 /** Mount once (in the dashboard layout). */
 export function useAutoSync() {
   const { transactions, goals, holdings, ready, uid } = useFinanceStore()
+  // Local-only mode: no background copy to the server. AI features still sync when they are used.
+  const local = useStorageMode(s => s.mode === 'local')
   useEffect(() => {
-    if (!uid || !ready.txs || !navigator.onLine) return
+    if (local || !uid || !ready.txs || !navigator.onLine) return
     const t = setTimeout(() => { runSync().catch(() => undefined) }, 8000)
     return () => clearTimeout(t)
-  }, [uid, ready.txs, transactions, goals, holdings])
+  }, [local, uid, ready.txs, transactions, goals, holdings])
   useEffect(() => {
+    if (local) return
     const on = () => runSync().catch(() => undefined)
     window.addEventListener('online', on)
     return () => window.removeEventListener('online', on)
-  }, [])
+  }, [local])
 }

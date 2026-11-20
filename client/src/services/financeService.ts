@@ -15,7 +15,7 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, limit as qlimit, onSnapshot,
   writeBatch, increment, runTransaction, serverTimestamp, Timestamp, WriteBatch, Unsubscribe, deleteField,
-} from 'firebase/firestore'
+} from '../lib/datastore'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { db, auth } from '../config/firebase'
 import type { Account, RecurringRule, Transaction, PeriodRange, PeriodSummary, Loan } from '../lib/finance'

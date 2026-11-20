@@ -6,6 +6,7 @@ import { useFinanceStore } from '../../store/financeStore'
 import { settingsService } from '../../services/financeService'
 import { computeAlerts, detectAnomalies, loanStatus, getCategory, makePeriod, pruneDismissed, todayKey, type FinanceAlert } from '../../lib/finance'
 import { formatCurrency } from '../../utils/currency'
+import { useBackupReminder } from '../../hooks/useBackupStatus'
 
 const NOTIFIED_KEY = 'ff_notified_alerts'
 const tone: Record<FinanceAlert['severity'], string> = {
@@ -21,6 +22,7 @@ export default function NotificationCenter() {
   const d = usePeriodData(period)
   const { budgets, transactions, settings, loans, loanTxs } = useFinanceStore()
   const [open, setOpen] = useState(false)
+  const backupDue = useBackupReminder()
   const box = useRef<HTMLDivElement>(null)
 
   const alerts = useMemo(() => {
@@ -32,11 +34,12 @@ export default function NotificationCenter() {
       anomalies: detectAnomalies(transactions, today, 7).map(a => ({ id: a.transaction.id, label: a.transaction.description || a.transaction.merchant || getCategory(a.transaction.category).label, amount: a.transaction.amount, reason: a.reason })),
       safeToSpend: d.safeToSpend ? { amount: d.safeToSpend.safeToSpend, perDay: d.safeToSpend.dailyLimit } : null,
       lowSafeToSpendPerDay: 500,
+      backupDue,
       loans: loans.filter(l => l.status === 'active').map(l => { const st = loanStatus(l, loanTxs, today); return { id: l.id, direction: l.direction, counterparty: l.counterparty, outstanding: st.outstanding, dueDate: l.dueDate, dueInDays: st.dueInDays, overdueDays: st.overdueDays } }),
     })
     const dismissed = new Set(settings.dismissedAlerts || [])
     return all.filter(a => !dismissed.has(a.id))
-  }, [d, budgets, transactions, settings.dismissedAlerts, today, loans, loanTxs])
+  }, [d, budgets, transactions, settings.dismissedAlerts, today, loans, loanTxs, backupDue])
 
   // Browser notifications (opt-in), each alert at most once per device
   useEffect(() => {

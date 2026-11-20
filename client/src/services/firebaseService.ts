@@ -14,7 +14,7 @@ import {
   Timestamp,
   DocumentData,
   QueryConstraint
-} from 'firebase/firestore'
+} from '../lib/datastore'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -26,6 +26,7 @@ import {
   updateProfile
 } from 'firebase/auth'
 import { db, auth } from '../config/firebase'
+import { resolveStorage } from './storage'
 
 // ======= AUTH HELPER =======
 // Wait for auth to be ready (resolves with current user or null)
@@ -100,6 +101,8 @@ export const authService = {
   async register(email: string, password: string, firstName: string, lastName: string) {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password)
     const user = userCredential.user
+    // Apply the sign-up storage choice (cloud or this device) before the profile is written.
+    await resolveStorage(user.uid)
 
     // Update display name
     await updateProfile(user, {

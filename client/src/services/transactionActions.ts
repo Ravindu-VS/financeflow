@@ -7,7 +7,7 @@ import { savingsService, investmentService } from './firebaseService'
 import { useFinanceStore } from '../store/financeStore'
 import type { RecurringRule, Transaction, Frequency } from '../lib/finance'
 import { todayKey, buildOccurrence, occurrencesBetween, occurrenceId, withBaseAmount } from '../lib/finance'
-import { Timestamp } from 'firebase/firestore'
+import { Timestamp } from '../lib/datastore'
 
 export interface SaveOptions {
   repeat?: { frequency: Frequency; interval?: number; customUnit?: RecurringRule['customUnit']; endDate?: string; autoGenerate: boolean; isBill?: boolean; variableAmount?: boolean }

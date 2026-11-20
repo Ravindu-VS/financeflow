@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
@@ -8,6 +9,7 @@ import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 
 import { auth } from '../../config/firebase'
 import { Card, SectionHeader, Button, Input, Select } from '../ui'
 import ServicesPanel, { DeviceNotificationsCard } from './ServicesPanel'
+import PrivacyPanel from './PrivacyPanel'
 import {
   ServerStackIcon,
   Cog6ToothIcon,
@@ -16,13 +18,18 @@ import {
   CurrencyRupeeIcon,
   MoonIcon,
   SunIcon,
-  KeyIcon
+  KeyIcon,
+  LockClosedIcon
 } from '@heroicons/react/24/outline'
 
 export default function SettingsPage() {
   const { user, updateUser } = useAuthStore()
   const { resolved: theme, theme: choice, setTheme } = useThemeStore()
-  const [activeTab, setActiveTab] = useState<'preferences' | 'notifications' | 'security' | 'services'>(new URLSearchParams(location.search).get('tab') === 'services' ? 'services' : 'preferences')
+  type Tab = 'preferences' | 'privacy' | 'notifications' | 'security' | 'services'
+  const loc = useLocation()
+  const tabFromUrl = (): Tab | null => { const t = new URLSearchParams(loc.search).get('tab'); return t === 'services' || t === 'privacy' ? t : null }
+  const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl() || 'preferences')
+  useEffect(() => { const t = tabFromUrl(); if (t) setActiveTab(t) }, [loc.search]) // eslint-disable-line react-hooks/exhaustive-deps
   const [loading, setLoading] = useState(false)
 
   const { register: registerPrefs, handleSubmit: handlePrefs, formState: { isSubmitting: isSubmittingPrefs } } = useForm({
@@ -88,6 +95,7 @@ export default function SettingsPage() {
 
   const tabs = [
     { id: 'preferences', name: 'Preferences', icon: Cog6ToothIcon },
+    { id: 'privacy', name: 'Privacy & Backup', icon: LockClosedIcon },
     { id: 'notifications', name: 'Notifications', icon: BellIcon },
     { id: 'security', name: 'Security', icon: ShieldCheckIcon },
     { id: 'services', name: 'Services & AI', icon: ServerStackIcon },
@@ -193,6 +201,7 @@ export default function SettingsPage() {
       )}
 
       {activeTab === 'services' && <ServicesPanel />}
+      {activeTab === 'privacy' && <PrivacyPanel />}
 
       {/* Notifications Tab */}
       {activeTab === 'notifications' && <DeviceNotificationsCard />}

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useEffect, useMemo, useState } from 'react'
-import type { Unsubscribe } from 'firebase/firestore'
+import type { Unsubscribe } from '../lib/datastore'
 import {
   accountService, recurringService, loanService, settingsService, transactionService, snapshotService, migrationService,
   DEFAULT_SETTINGS, type PlanningSettings, type MigrationRecord,
